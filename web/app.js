@@ -317,7 +317,7 @@ document.addEventListener("click", async (ev) => {
     if (!a) return;
     cambiarVista("alertas");
     // Alerta exacta por nombre; el color queda para completar si se quiere uno concreto
-    llenarFormulario({ nombre: a.nombre, color: a.color || "", tienda: a.tienda || "Rocket League", exacto: 1 });
+    llenarFormulario({ nombre: a.nombre_completo || a.nombre, color: a.color || "", tienda: a.tienda || "Rocket League", exacto: 1 });
     if (!a.color) $("#form-alerta").color.focus();
   }
 });
@@ -367,7 +367,7 @@ async function cargarCatalogo(mas = false) {
   const pagina = mas && estado.catalogo ? estado.catalogo.pagina + 1 : 0;
   const params = new URLSearchParams({
     q: $("#c-buscar").value.trim(), tipo: $("#c-tipo").value, rareza: $("#c-rareza").value,
-    vista: $("#c-vista").value, pagina,
+    vista: $("#c-vista").value, origen: $("#c-origen").value, pase: $("#c-pase").value, pagina,
   });
   const pedido = (cargarCatalogo.n = (cargarCatalogo.n || 0) + 1);
   let datos;
@@ -380,9 +380,10 @@ async function cargarCatalogo(mas = false) {
   if (pedido !== cargarCatalogo.n) return; // llegó una búsqueda más nueva
   if (mas && estado.catalogo) datos.articulos = estado.catalogo.articulos.concat(datos.articulos);
   estado.catalogo = datos;
-  for (const [id, valores] of [["#c-tipo", datos.tipos], ["#c-rareza", datos.rarezas]]) {
+  for (const [id, valores, fijas] of [["#c-tipo", datos.tipos, 1], ["#c-rareza", datos.rarezas, 1],
+    ["#c-origen", datos.origenes, 2], ["#c-pase", datos.pases, 1]]) {
     const sel = $(id), actual = sel.value;
-    sel.length = 1;
+    sel.length = fijas;
     for (const v of valores) sel.add(new Option(v, v));
     sel.value = actual;
   }
@@ -399,7 +400,7 @@ function tarjetaCatalogo(a) {
     : a.ultima_vez ? "" : `<span class="etiqueta nunca">Nunca visto</span>`;
   return `
   <article class="tarjeta ${conAlerta ? "con-alerta" : ""}" style="--rareza:${rareza}">
-    <div class="tarjeta-img">
+    <div class="tarjeta-img" data-ficha="${esc(a.id)}" title="Ver ficha">
       ${img ? `<img src="${esc(img)}" alt="${esc(a.nombre)}" loading="lazy" referrerpolicy="no-referrer">` : `<span class="sin-imagen">Sin imagen</span>`}
       <div class="etiquetas">
         <span>${a.rareza ? `<span class="etiqueta rareza">${esc(a.rareza)}</span>` : ""}</span>
@@ -408,9 +409,12 @@ function tarjetaCatalogo(a) {
     </div>
     <div class="franja"></div>
     <div class="cuerpo">
-      <h3>${esc(a.nombre)}</h3>
+      <h3 data-ficha="${esc(a.id)}">${esc(a.nombre_completo || a.nombre)}</h3>
       <span class="tipo">${esc(a.tipo)}${a.calidad && a.calidad !== a.rareza ? ` · ${esc(a.calidad)}` : ""}</span>
-      <span class="visto">${a.ultima_vez ? `Visto en tienda: ${esc(fechaCorta(a.ultima_vez))} (${a.veces} ${a.veces === 1 ? "vez" : "veces"})` : "Sin registro en tu historial"}</span>
+      ${textoOrigen(a)}
+      <span class="visto">${a.ultima_vez
+        ? `Última vez en tienda: ${esc(fechaDia(a.ultima_vez))}${a.ultimo_precio != null ? ` · ${esc(a.ultimo_precio.toLocaleString("es"))} créditos` : ""} · ${a.veces} ${a.veces === 1 ? "vez" : "veces"}`
+        : "Sin registro en la tienda"}</span>
     </div>
     <div class="botones-tarjeta">
       ${urlSegura(a.url) ? `<a class="btn btn-chico" href="${esc(a.url)}" target="_blank" rel="noopener noreferrer">Ver ↗</a>` : ""}
@@ -424,7 +428,9 @@ function pintarCatalogo() {
   let texto;
   if (!c.total_catalogo) texto = c.actualizando ? `Descargando el catálogo (${c.progreso})…` : "El catálogo todavía no se descargó.";
   else {
-    texto = `${c.total.toLocaleString("es")} de ${c.total_catalogo.toLocaleString("es")} artículos · actualizado ${fechaCorta(c.actualizado)} · fuente: rl.source.gs`;
+    texto = `${c.total.toLocaleString("es")} de ${c.total_catalogo.toLocaleString("es")} artículos · catálogo del ${fechaCorta(c.actualizado)}`
+      + (c.historial_actualizado ? ` · tienda (itemshop.gg, desde sep. 2026) del ${fechaCorta(c.historial_actualizado)}` : "")
+      + " · origen: wiki de Rocket League";
     if (c.actualizando) texto += ` · actualizando (${c.progreso})…`;
   }
   if (c.error) texto += ` · ⚠ ${c.error}`;
@@ -439,7 +445,103 @@ $("#c-buscar").addEventListener("input", () => {
   clearTimeout(cargarCatalogo.espera);
   cargarCatalogo.espera = setTimeout(() => cargarCatalogo(), 250);
 });
-for (const id of ["#c-tipo", "#c-rareza", "#c-vista"]) $(id).addEventListener("input", () => cargarCatalogo());
+for (const id of ["#c-tipo", "#c-rareza", "#c-vista", "#c-origen", "#c-pase"]) $(id).addEventListener("input", () => cargarCatalogo());
+
+// ---------- origen y ficha ----------
+function fechaDia(iso) {
+  if (!iso) return "";
+  const d = new Date(iso.length === 10 ? iso + "T12:00:00" : iso);
+  return isNaN(d) ? iso : d.toLocaleDateString("es", { day: "numeric", month: "short", year: "numeric" });
+}
+
+function describirOrigen(o) {
+  return [o.origen, o.detalle, o.nivel ? `nivel ${o.nivel}` : ""].filter(Boolean).join(" · ");
+}
+
+function textoOrigen(a) {
+  if (!a.origenes || !a.origenes.length) return `<span class="origen desconocido">Origen: desconocido</span>`;
+  const extra = a.origenes.length > 1 ? ` (+${a.origenes.length - 1})` : "";
+  return `<span class="origen" title="${esc(a.origenes.map(describirOrigen).join("\n"))}">${esc(describirOrigen(a.origenes[0]))}${extra}</span>`;
+}
+
+async function abrirFicha(id) {
+  const fondo = $("#ficha-fondo"), caja = $("#ficha");
+  caja.innerHTML = `<div class="vacio">Cargando ficha…</div>`;
+  fondo.hidden = false;
+  let a;
+  try {
+    a = await api(`/api/catalogo/ficha?${new URLSearchParams({ id })}`);
+  } catch (e) {
+    caja.innerHTML = `<div class="vacio">${esc(e.message)}</div>`;
+    return;
+  }
+  estado.fichaActual = a;
+  const rareza = colorSeguro(a.rareza_color) || "#8a94a8";
+  const img = urlSegura(a.imagen);
+  const dato = (t, v) => (v || v === 0 ? `<div class="dato"><dt>${esc(t)}</dt><dd>${esc(v)}</dd></div>` : "");
+  const historial = a.historial.length ? `
+      <div class="tabla-envoltura"><table class="tabla">
+        <thead><tr><th>Llegó</th><th>Se fue</th><th>Duración</th><th>Precio</th><th>Sección</th></tr></thead>
+        <tbody>${a.historial.map((h) => `<tr><td>${esc(fechaDia(h.llegada))}</td><td>${esc(fechaDia(h.salida) || h.salida)}</td>
+          <td>${esc(h.duracion)}</td><td>${esc(h.precio)}</td><td>${esc(h.seccion)}</td></tr>`).join("")}</tbody>
+      </table></div>` : `<p class="sutil">${a.slug_itemshop ? "Sin apariciones registradas." : "itemshop.gg no lo registró en la tienda (sus datos empiezan en septiembre de 2026)."}</p>`;
+  const propio = a.propio.length ? `
+    <section><h3>Visto por este notificador</h3>
+      <div class="tabla-envoltura"><table class="tabla">
+        <thead><tr><th>Color</th><th>Precio</th><th>Sección</th><th>Primera vez</th><th>Última vez</th><th>Veces</th></tr></thead>
+        <tbody>${a.propio.map((r) => `<tr><td>${esc(r.color || "—")}</td><td>${esc(r.precio)}</td><td>${esc(r.seccion)}</td>
+          <td>${esc(fechaCorta(r.primera_vez))}</td><td>${esc(fechaCorta(r.ultima_vez))}${r.en_tienda ? " (hoy)" : ""}</td><td>${r.apariciones}</td></tr>`).join("")}</tbody>
+      </table></div></section>` : "";
+  caja.innerHTML = `
+    <div class="ficha-cabeza" style="--rareza:${rareza}">
+      <div class="ficha-img">${img ? `<img src="${esc(img)}" alt="" referrerpolicy="no-referrer">` : `<span class="sin-imagen">Sin imagen</span>`}</div>
+      <div>
+        <h2 id="ficha-nombre">${esc(a.nombre_completo || a.nombre)}</h2>
+        <p class="sutil">${esc(a.tipo)} · <span style="color:${rareza}">${esc(a.rareza)}</span>${a.calidad && a.calidad !== a.rareza ? ` (${esc(a.calidad)})` : ""}
+          ${a.en_tienda ? ` · <span class="etiqueta hoy">En tienda hoy</span>` : ""}</p>
+        <dl class="datos">
+          ${dato("Última vez en tienda", a.ultima_vez ? fechaDia(a.ultima_vez) : "Sin registro")}
+          ${dato("Primera vez", a.primera_vez ? fechaDia(a.primera_vez) : "")}
+          ${dato("Veces en tienda", a.ultima_vez ? a.veces : "")}
+          ${dato("Último precio", a.ultimo_precio != null ? `${a.ultimo_precio.toLocaleString("es")} créditos` : "")}
+          ${dato("Colores vistos", a.pinturas.length ? a.pinturas.join(", ") : "")}
+        </dl>
+        <div class="fila-botones izq">
+          <button class="btn btn-principal btn-chico" data-crear-alerta-ficha="1">+ Alerta</button>
+          ${urlSegura(a.url) ? `<a class="btn btn-chico" href="${esc(a.url)}" target="_blank" rel="noopener noreferrer">rl.source.gs ↗</a>` : ""}
+          ${urlSegura(a.url_itemshop) ? `<a class="btn btn-chico" href="${esc(a.url_itemshop)}" target="_blank" rel="noopener noreferrer">itemshop.gg ↗</a>` : ""}
+        </div>
+      </div>
+      <button class="btn btn-chico ficha-cerrar" data-cerrar-ficha="1" aria-label="Cerrar">✕</button>
+    </div>
+    <div class="ficha-cuerpo">
+      <section><h3>Origen</h3>
+        ${a.origenes.length ? `<ul class="lista-origen">${a.origenes.map((o) => `<li>${esc(describirOrigen(o))} <span class="sutil">(${esc(o.fuente)})</span></li>`).join("")}</ul>`
+          : `<p class="sutil">Desconocido: no figura en los Rocket Pass, packs ni otras listas de la wiki. Puede venir de cajas, drops, eventos, Twitch, lotes de la tienda u otros.</p>`}
+      </section>
+      <section><h3>Historial en la tienda (itemshop.gg)</h3>${a.historial_error ? `<p class="error">${esc(a.historial_error)}</p>` : ""}${historial}</section>
+      ${propio}
+    </div>`;
+}
+
+function cerrarFicha() {
+  $("#ficha-fondo").hidden = true;
+  estado.fichaActual = null;
+}
+
+document.addEventListener("click", (ev) => {
+  const abrir = ev.target.closest("[data-ficha]");
+  if (abrir) return abrirFicha(abrir.dataset.ficha);
+  if (ev.target.closest("[data-cerrar-ficha]") || ev.target === $("#ficha-fondo")) return cerrarFicha();
+  if (ev.target.closest("[data-crear-alerta-ficha]") && estado.fichaActual) {
+    const a = estado.fichaActual;
+    cerrarFicha();
+    cambiarVista("alertas");
+    llenarFormulario({ nombre: a.nombre_completo || a.nombre, tienda: "Rocket League", exacto: 1 });
+    $("#form-alerta").color.focus();
+  }
+});
+document.addEventListener("keydown", (ev) => { if (ev.key === "Escape" && !$("#ficha-fondo").hidden) cerrarFicha(); });
 $("#c-mas").addEventListener("click", () => cargarCatalogo(true));
 $("#btn-catalogo").addEventListener("click", async () => {
   await api("/api/catalogo/actualizar", "POST").catch((e) => mostrarAviso(e.message));

@@ -89,8 +89,9 @@ NOMBRE_TIPO = {
 
 # ---------- utilidades ----------
 
-def descargar(url):
-    pedido = urllib.request.Request(url, headers={"User-Agent": "Mozilla/5.0 (notificador-tienda-rl)"})
+def descargar(url, cabeceras=None):
+    pedido = urllib.request.Request(url, headers={"User-Agent": "Mozilla/5.0 (notificador-tienda-rl)",
+                                                  **(cabeceras or {})})
     with urllib.request.urlopen(pedido, timeout=30) as r:
         return r.read().decode("utf-8", errors="replace")
 
