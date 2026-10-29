@@ -1,0 +1,26 @@
+{
+  "minutos_entre_revisiones": 30,
+  "idioma_fortnite": "es-419",
+  "rocket_league": true,
+  "fortnite": true,
+  "fuente_rl": "auto",
+  "secciones_rl_ignoradas": [
+    "RLCS",
+    "Shop"
+  ],
+  "tipos_fortnite": [
+    "lote",
+    "carroceria",
+    "rueda",
+    "propulsor",
+    "rastro",
+    "calcomania"
+  ],
+  "avisar_todo_lo_nuevo": true,
+  "lista_de_deseos": [
+    "Octane",
+    "Fennec",
+    "Titanium White",
+    "Black Market"
+  ]
+}
