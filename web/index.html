@@ -1,0 +1,116 @@
+<!doctype html>
+<html lang="es">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>Tienda RL · Notificador</title>
+  <link rel="stylesheet" href="/estilos.css">
+</head>
+<body>
+  <header class="cabecera">
+    <div class="marca">
+      <span class="logo">RL</span>
+      <div>
+        <h1>Tienda de hoy</h1>
+        <p id="estado-revision" class="sutil">Cargando…</p>
+      </div>
+    </div>
+    <div class="acciones">
+      <div id="canales" class="canales"></div>
+      <button id="btn-probar" class="btn">Probar aviso</button>
+      <button id="btn-revisar" class="btn btn-principal">Revisar ahora</button>
+    </div>
+  </header>
+
+  <nav class="pestanas" role="tablist">
+    <button class="pestana activa" data-vista="Rocket League">Rocket League <span class="cuenta" id="cuenta-rl"></span></button>
+    <button class="pestana" data-vista="Fortnite">Rocket League en Fortnite <span class="cuenta" id="cuenta-fn"></span></button>
+    <button class="pestana" data-vista="catalogo">Catálogo</button>
+    <button class="pestana" data-vista="historial">Historial</button>
+    <button class="pestana" data-vista="alertas">Alertas <span class="cuenta" id="cuenta-alertas"></span></button>
+  </nav>
+
+  <section id="filtros" class="filtros">
+    <input id="f-buscar" type="search" placeholder="Buscar nombre, color, tipo…" autocomplete="off">
+    <select id="f-tipo"><option value="">Todos los tipos</option></select>
+    <select id="f-rareza"><option value="">Todas las rarezas</option></select>
+    <select id="f-color"><option value="">Todos los colores</option></select>
+    <select id="f-orden">
+      <option value="seccion">Por sección</option>
+      <option value="precio-desc">Precio: mayor a menor</option>
+      <option value="precio-asc">Precio: menor a mayor</option>
+      <option value="termina">Termina antes</option>
+      <option value="nombre">Nombre</option>
+    </select>
+    <label class="casilla"><input id="f-alerta" type="checkbox"> Solo con alerta</label>
+  </section>
+
+  <main>
+    <div id="vista-tienda"></div>
+
+    <div id="vista-historial" hidden>
+      <div class="tabla-envoltura">
+        <table class="tabla">
+          <thead><tr><th></th><th>Artículo</th><th>Tipo</th><th>Rareza</th><th>Tienda</th><th>Precio</th><th>Primera vez</th><th>Última vez</th><th>Veces</th></tr></thead>
+          <tbody id="historial-cuerpo"></tbody>
+        </table>
+      </div>
+    </div>
+
+    <div id="vista-catalogo" hidden>
+      <section class="filtros filtros-catalogo">
+        <input id="c-buscar" type="search" placeholder="Buscar en todo Rocket League: Ruinator, Haunted Hoss…" autocomplete="off">
+        <select id="c-tipo"><option value="">Todos los tipos</option></select>
+        <select id="c-rareza"><option value="">Todas las rarezas</option></select>
+        <select id="c-vista">
+          <option value="">Todos</option>
+          <option value="nunca">Nunca vistos en la tienda</option>
+          <option value="visto">Vistos alguna vez</option>
+          <option value="hoy">En la tienda hoy</option>
+          <option value="alerta">Con alerta</option>
+        </select>
+      </section>
+      <div class="catalogo-estado">
+        <span id="c-estado" class="sutil"></span>
+        <button id="btn-catalogo" class="btn btn-chico">Actualizar catálogo</button>
+      </div>
+      <div id="c-rejilla" class="rejilla"></div>
+      <div class="fila-centro"><button id="c-mas" class="btn" hidden>Mostrar más</button></div>
+    </div>
+
+    <div id="vista-alertas" class="alertas" hidden>
+      <form id="form-alerta" class="panel">
+        <h2 id="form-titulo">Nueva alerta</h2>
+        <p class="sutil">Escribe una parte del texto (sin importar mayúsculas ni tildes). Deja en blanco lo que no importe; todo lo que completes tiene que coincidir.</p>
+        <input type="hidden" name="id">
+        <label>Nombre <input name="nombre" placeholder="Octane, Fennec, Hikari…"></label>
+        <label>Color / pintura <input name="color" placeholder="Titanium White"></label>
+        <label>Tipo <input name="tipo" placeholder="Body, Wheels, Decal, Rueda…"></label>
+        <label>Rareza <input name="rareza" placeholder="Black Market, Exotic…"></label>
+        <label>Tienda
+          <select name="tienda">
+            <option value="">Cualquiera</option>
+            <option value="Rocket League">Rocket League</option>
+            <option value="Fortnite">Rocket League en Fortnite</option>
+          </select>
+        </label>
+        <label>Precio máximo <input name="precio_max" type="number" min="0" step="1" placeholder="sin límite"></label>
+        <label class="casilla" title="Si está marcado, &quot;Ruinator&quot; no coincide con &quot;Ruinator: Inverted&quot;"><input name="exacto" type="checkbox"> Nombre exacto</label>
+        <label class="casilla"><input name="activa" type="checkbox" checked> Activa</label>
+        <p id="form-error" class="error" hidden></p>
+        <div class="fila-botones">
+          <button type="submit" class="btn btn-principal">Guardar alerta</button>
+          <button type="button" id="btn-cancelar" class="btn" hidden>Cancelar</button>
+        </div>
+      </form>
+      <div class="panel">
+        <h2>Tus alertas</h2>
+        <ul id="lista-alertas" class="lista-alertas"></ul>
+      </div>
+    </div>
+  </main>
+
+  <div id="aviso" class="aviso" hidden></div>
+  <script src="/app.js"></script>
+</body>
+</html>

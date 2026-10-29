@@ -1,0 +1,6 @@
+__pycache__/
+tienda.db
+tienda.db-wal
+tienda.db-shm
+config.json
+vistos.json

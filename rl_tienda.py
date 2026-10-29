@@ -38,7 +38,7 @@ URL_FN = "https://fortnite-api.com/v2/shop?language={idioma}"
 URL_FN_WEB = "https://www.fortnite.com/item-shop"
 
 CONFIG_INICIAL = {
-    "minutos_entre_revisiones": 30,
+    "minutos_entre_revisiones": 60,
     "idioma_fortnite": "es-419",
     "rocket_league": True,
     "fortnite": True,
@@ -52,6 +52,18 @@ CONFIG_INICIAL = {
     "avisar_todo_lo_nuevo": True,
     # Palabras a buscar en nombre, tipo o color (sin importar mayúsculas). Ej: "octane", "titanium white", "fennec"
     "lista_de_deseos": ["Octane", "Fennec", "Titanium White", "Black Market"],
+    # --- Opciones del servidor web (notificador.py) ---
+    "puerto": 8765,
+    "abrir_navegador": True,
+    # Revisión fija diaria (además de la periódica), en la zona horaria indicada (GMT-3 = -3)
+    "hora_revision_fija": "16:05",
+    "zona_horaria_gmt": -3,
+    "avisos_windows": True,
+    # Pega aquí la URL del webhook de Discord (vacío = desactivado)
+    "discord_webhook_url": "",
+    # Correo opcional. Para Gmail usa una "contraseña de aplicación" (vacío = desactivado)
+    "correo_smtp": {"servidor": "smtp.gmail.com", "puerto": 587, "usuario": "",
+                    "contrasena_aplicacion": "", "para": ""},
 }
 
 TIPOS_FN = {
@@ -60,6 +72,10 @@ TIPOS_FN = {
     "booster": "propulsor",
     "drifttrail": "rastro",
     "skin": "calcomania",
+}
+COLORES_RAREZA_FN = {
+    "common": "#9d9d9d", "uncommon": "#69bb1e", "rare": "#2cc3fc", "epic": "#c359ff",
+    "legendary": "#ea8d23", "mythic": "#ffd84b", "exotic": "#76d6e3",
 }
 NOMBRE_TIPO = {
     "lote": "Lote",
@@ -92,7 +108,8 @@ def guardar_json(ruta, datos):
 
 def cargar_config():
     if not ARCHIVO_CONFIG.exists():
-        guardar_json(ARCHIVO_CONFIG, CONFIG_INICIAL)
+        ejemplo = CARPETA / "config.ejemplo.json"  # el que viene en el repo, sin datos privados
+        guardar_json(ARCHIVO_CONFIG, leer_json(ejemplo, CONFIG_INICIAL) if ejemplo.exists() else CONFIG_INICIAL)
         print(f"Creé {ARCHIVO_CONFIG.name}: edítalo para cambiar tu lista de deseos.")
     guardado = leer_json(ARCHIVO_CONFIG, {})
     config = dict(CONFIG_INICIAL)
@@ -120,7 +137,15 @@ def texto(valor):
     return "" if valor in (None, "$undefined") else str(valor).strip()
 
 
-def articulo_rl(nombre, tipo, color, rareza, precio, seccion, hasta, url):
+def numero(precio):
+    try:
+        return int(re.sub(r"[^\d]", "", str(precio)))
+    except ValueError:
+        return None
+
+
+def articulo_rl(nombre, tipo, color, rareza, precio, seccion, hasta, url,
+                imagen="", color_hex="", rareza_color="", mezcla=""):
     # El id no depende de la página, así cambiar de fuente no repite avisos.
     clave = f"{nombre}|{color}|{precio}".lower()
     return {
@@ -132,8 +157,16 @@ def articulo_rl(nombre, tipo, color, rareza, precio, seccion, hasta, url):
         "color": color,
         "rareza": rareza,
         "precio": f"{precio} créditos" if precio else "",
-        "hasta": hasta,
+        "hasta": hasta[:10],
+        "hasta_iso": hasta,
         "url": url,
+        # Datos extra para la interfaz web (notificador.py)
+        "imagen": imagen,
+        "color_hex": color_hex,
+        "rareza_color": rareza_color,
+        "mezcla": mezcla,  # "screen" = imagen con fondo negro que se funde con el fondo
+        "precio_num": numero(precio),
+        "moneda": "créditos",
     }
 
 
@@ -148,15 +181,22 @@ def rl_desde_itemshop():
         titulo = texto(sec.get("title"))
         for c in sec.get("cards", []):
             pintura = c.get("paint")
-            color = texto(pintura.get("name")) if isinstance(pintura, dict) else ""
+            pintura = pintura if isinstance(pintura, dict) else {}
+            rareza = texto(c.get("rarityName"))
             tipo = texto(c.get("subtitle"))
+            if rareza and tipo.lower().startswith(rareza.lower() + " "):
+                tipo = tipo[len(rareza) + 1:]  # "Common Body" -> "Body"
             if ":bundle:" in texto(c.get("id")):
                 tipo = f"Lote ({tipo})"
             precio = (c.get("price") or {}).get("amount")
-            hasta = texto((c.get("availability") or {}).get("outDate"))[:10]
-            articulos.append(articulo_rl(texto(c.get("name")), tipo, color, texto(c.get("rarityName")),
+            hasta = texto((c.get("availability") or {}).get("outDate")) or texto(sec.get("endsAt"))
+            articulos.append(articulo_rl(texto(c.get("name")), tipo, texto(pintura.get("name")), rareza,
                                          f"{precio:,}" if isinstance(precio, int) else "", titulo, hasta,
-                                         texto(c.get("url")) or URL_RL))
+                                         texto(c.get("url")) or URL_RL,
+                                         imagen=texto(c.get("image")) or texto(c.get("art")),
+                                         color_hex=texto(pintura.get("color")),
+                                         rareza_color=texto(c.get("rarityColor")),
+                                         mezcla=texto(c.get("blend"))))
     return articulos
 
 
@@ -178,12 +218,16 @@ def rl_desde_portal():
         if not nombre or not precio:  # sin precio = artículos de esports/destacados sin venta directa
             continue
         pintura = buscar(r'"title":"[^"]*: ([^"]*)"')
+        # Sin imagen a propósito: RL Portal solo las sirve desde su API (la interfaz
+        # reutiliza la imagen guardada en el historial si el artículo ya se vio antes).
         articulos.append(articulo_rl(
             nombre,
             buscar(r'"p",null,\{[^{}]*"children":"([^"]*)"'),
             pintura,
             buscar(r'"--quality-color"[^{}]*\},"children":"([^"]*)"'),
-            precio, "Tienda", "", URL_RL_RESPALDO))
+            precio, "Tienda", "", URL_RL_RESPALDO,
+            color_hex=buscar(r'rounded-full border border-white/50","style":\{"backgroundColor":"(#\w+)"') if pintura else "",
+            rareza_color=buscar(r'"--quality-color":"(#\w+)"')))
     return articulos
 
 
@@ -225,17 +269,33 @@ def tienda_fortnite(config):
             detalle = ", ".join(sorted({NOMBRE_TIPO.get(t, t) for t in tipos}))
         else:
             detalle = NOMBRE_TIPO.get(tipo, tipo)
-        rareza = (autos[0].get("rarity") or {}).get("displayValue", "")
+        rareza_fn = autos[0].get("rarity") or {}
+        rareza = rareza_fn.get("displayValue", "")
+        serie = autos[0].get("series") or {}
+        if serie.get("colors"):
+            rareza_color = "#" + serie["colors"][0][:6]
+        else:
+            rareza_color = COLORES_RAREZA_FN.get(rareza_fn.get("value", ""), "#9d9d9d")
+        render = ((e.get("newDisplayAsset") or {}).get("renderImages") or [{}])[0].get("image")
+        imagenes = autos[0].get("images") or {}
+        imagen = render or (e.get("bundle") or {}).get("image") or imagenes.get("large") or imagenes.get("small") or ""
         articulos.append({
             "id": "fn:" + e.get("offerId", nombre),
             "tienda": "Fortnite",
             "seccion": (e.get("layout") or {}).get("name") or "Vehículos",
             "nombre": nombre,
             "tipo": detalle,
-            "color": rareza,
+            "color": "",
+            "rareza": rareza,
             "precio": f"{e.get('finalPrice', '?')} V-Bucks",
             "url": URL_FN_WEB,
             "hasta": (e.get("outDate") or "")[:10],
+            "hasta_iso": e.get("outDate") or "",
+            "imagen": imagen,
+            "color_hex": "",
+            "rareza_color": rareza_color,
+            "precio_num": e.get("finalPrice") if isinstance(e.get("finalPrice"), int) else None,
+            "moneda": "V-Bucks",
         })
     return articulos
 
