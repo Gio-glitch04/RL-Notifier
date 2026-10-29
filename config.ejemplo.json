@@ -1,5 +1,5 @@
 {
-  "minutos_entre_revisiones": 30,
+  "minutos_entre_revisiones": 60,
   "idioma_fortnite": "es-419",
   "rocket_league": true,
   "fortnite": true,
@@ -22,5 +22,18 @@
     "Fennec",
     "Titanium White",
     "Black Market"
-  ]
+  ],
+  "puerto": 8765,
+  "abrir_navegador": true,
+  "hora_revision_fija": "16:05",
+  "zona_horaria_gmt": -3,
+  "avisos_windows": true,
+  "discord_webhook_url": "",
+  "correo_smtp": {
+    "servidor": "smtp.gmail.com",
+    "puerto": 587,
+    "usuario": "",
+    "contrasena_aplicacion": "",
+    "para": ""
+  }
 }
