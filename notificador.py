@@ -725,9 +725,13 @@ def articulo_alerta(con, al, en_tienda, historial):
         fila = con.execute(f"SELECT {columnas} FROM catalogo WHERE id=? OR clave=? LIMIT 1",
                            (url, origenes.slug(en_venta["nombre"]))).fetchone()
         cat = dict(fila) if fila else None
+    imagen = (en_venta or {}).get("imagen") or (cat or {}).get("imagen") or ""
+    mezcla = (en_venta or {}).get("mezcla") or ""
+    if not mezcla and "cdn.source.gs/rocket-league/img/" in imagen:
+        mezcla = "screen"  # renders sobre negro: igual que en la tienda (itemshop.gg los marca "screen")
     return {
-        "imagen": (en_venta or {}).get("imagen") or (cat or {}).get("imagen") or "",
-        "mezcla": (en_venta or {}).get("mezcla") or "" if en_venta else "",
+        "imagen": imagen,
+        "mezcla": mezcla,
         "titulo": (cat or {}).get("nombre_completo") or (cat or {}).get("nombre") or (en_venta or {}).get("nombre")
         or al.get("nombre"),
         "rareza": (cat or en_venta or {}).get("rareza") or "",
