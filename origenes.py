@@ -254,3 +254,35 @@ def origenes_packs():
             resultado.append({"url_catalogo": "https://rl.source.gs" + ruta, "origen": "Pack",
                               "detalle": f"{nombre} (DLC)"})
     return resultado
+
+
+# ---------- rlshopnotify.com ----------
+# Dirección pública que usa la propia página (la encontró Giovanni con F12). Un artículo por pedido,
+# solo al abrir su ficha. Los ids son los mismos que los del catálogo (4962 = Ruinator).
+URL_RLSHOPNOTIFY_API = "https://api.rlshopnotify.com/api/items/{}"
+URL_RLSHOPNOTIFY_WEB = "https://rlshopnotify.com/items/{}"
+UA_NOTIFICADOR = "RL-Notifier-local/1.0 (herramienta personal; un pedido al abrir una ficha)"
+
+
+def historial_rlshopnotify(producto_id):
+    """Cada aparición de un artículo en la tienda según rlshopnotify.com (con color y lotes)."""
+    datos = json.loads(descargar(URL_RLSHOPNOTIFY_API.format(int(producto_id)),
+                                 cabeceras={"User-Agent": UA_NOTIFICADOR, "Accept": "application/json"}))
+    apariciones, vistas = [], set()
+    for a in datos.get("appearances") or []:
+        seccion = " · ".join(x for x in (a.get("shop_section"), a.get("subsection")) if x)
+        apariciones.append({
+            "id": a.get("appearance_id"),
+            "llegada": (a.get("starts_at") or a.get("fetched_at") or "")[:10],
+            "salida": (a.get("ends_at") or "")[:10],
+            "precio": a.get("price_credits"),
+            "seccion": seccion,
+            "pintura": a.get("paint_name") or "",
+            "lote": bool(a.get("bundle_listing") or a.get("bundle_subsection_row")),
+        })
+        # La API repite la misma rotación una vez por cada lectura diaria que hizo: se deja una sola
+        clave = tuple(apariciones[-1][k] for k in ("llegada", "salida", "seccion", "pintura", "precio", "lote"))
+        if clave in vistas:
+            apariciones.pop()
+        vistas.add(clave)
+    return apariciones

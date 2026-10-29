@@ -178,6 +178,7 @@ a.alerta-titulo:hover { text-decoration: underline; }
 .tags { display: flex; flex-wrap: wrap; gap: 5px; margin-top: 6px; }
 .tag { font-size: 11px; font-weight: 600; padding: 2px 8px; border-radius: 99px; border: 1px solid var(--borde);
   background: var(--panel); color: var(--texto); white-space: nowrap; }
+.tag-fuente { background: #16324a; color: #9fd0ff; border-color: #24507a; font-weight: 500; }
 .tag-neutro { background: #222a3a; color: #cfd6e4; }
 .tag-gris { background: #4a5263; color: #f1f3f7; border-color: #4a5263; }
 .tag-rl { background: #1f6fe0; color: #fff; border-color: #1f6fe0; }
