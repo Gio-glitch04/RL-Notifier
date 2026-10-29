@@ -154,6 +154,14 @@ CREATE TABLE IF NOT EXISTS historial_externo (
     producto_id INTEGER PRIMARY KEY, veces INTEGER, primera TEXT, ultima TEXT, ultimo_precio INTEGER,
     en_tienda INTEGER, pinturas TEXT, slug TEXT, actualizado TEXT
 );
+CREATE TABLE IF NOT EXISTS historial_rsn (
+    producto_id INTEGER, aparicion_id INTEGER, llegada TEXT, salida TEXT, precio INTEGER, seccion TEXT,
+    pintura TEXT, lote INTEGER, PRIMARY KEY (producto_id, aparicion_id)
+);
+CREATE TABLE IF NOT EXISTS resumen_historial (
+    producto_id INTEGER PRIMARY KEY, veces INTEGER, primera TEXT, ultima TEXT, ultimo_precio INTEGER,
+    pinturas TEXT, actualizado TEXT
+);
 CREATE TABLE IF NOT EXISTS historial_detalle (
     producto_id INTEGER, orden INTEGER, llegada TEXT, salida TEXT, duracion TEXT, precio TEXT, seccion TEXT,
     PRIMARY KEY (producto_id, orden)
@@ -813,6 +821,10 @@ def datos_catalogo(con):
     for f in con.execute("SELECT * FROM origenes"):
         origen.setdefault(f["catalogo_id"], []).append(dict(f))
     externo = {f["producto_id"]: dict(f) for f in con.execute("SELECT * FROM historial_externo")}
+    for r in con.execute("SELECT * FROM resumen_historial"):
+        e = externo.setdefault(r["producto_id"], {"en_tienda": 0, "slug": "", "actualizado": ""})
+        e.update(veces=r["veces"], primera=r["primera"], ultimo_precio=r["ultimo_precio"], pinturas=r["pinturas"],
+                 ultima=min(r["ultima"] or "", ahora()) or None)
     reciente = iso(datetime.now(timezone.utc) - timedelta(hours=30))
     return origen, externo, vistos_propios(con), reciente
 
@@ -942,6 +954,83 @@ def catalogo_api(consulta):
             "error": EstadoCatalogo.error}
 
 
+def numero_precio(texto):
+    m = re.search(r"\d[\d,.]*", str(texto or ""))
+    return int(re.sub(r"[^\d]", "", m[0])) if m else None
+
+
+def dia(iso):
+    try:
+        return datetime.strptime((iso or "")[:10], "%Y-%m-%d").date()
+    except ValueError:
+        return None
+
+
+def combinar_historial(itemshop, rsn, propio):
+    """Une las apariciones de las tres fuentes sin duplicar.
+
+    Una misma rotación en dos fuentes cuenta una vez: se unen si empiezan el mismo día (±1),
+    cuestan lo mismo y la pintura coincide (itemshop.gg no dice la pintura: vale cualquiera).
+    """
+    filas = []
+    for r in rsn:
+        filas.append({"llegada": r["llegada"], "salida": r["salida"], "precio": r["precio"], "seccion": r["seccion"],
+                      "pintura": r["pintura"], "lote": bool(r["lote"]), "fuentes": ["rlshopnotify"]})
+
+    def buscar(llegada, precio, pintura, fuente):
+        d = dia(llegada)
+        for f in filas:
+            if fuente in f["fuentes"] or not d or not dia(f["llegada"]):
+                continue
+            if abs((dia(f["llegada"]) - d).days) > 1:
+                continue
+            if precio is not None and f["precio"] is not None and precio != f["precio"]:
+                continue
+            if pintura is not None and normalizar(pintura) != normalizar(f["pintura"]) and f["pintura"]:
+                continue
+            return f
+        return None
+
+    for r in itemshop:
+        precio = numero_precio(r["precio"])
+        f = buscar(r["llegada"], precio, None, "itemshop.gg")
+        if f:
+            f["fuentes"].append("itemshop.gg")
+        else:
+            filas.append({"llegada": r["llegada"], "salida": r["salida"], "precio": precio, "seccion": r["seccion"],
+                          "pintura": "", "lote": "bundle" in normalizar(r["seccion"]), "fuentes": ["itemshop.gg"]})
+    for r in propio:
+        f = buscar(r["primera_vez"], r["precio_num"], r["color"] or "", "este notificador")
+        if f:
+            f["fuentes"].append("este notificador")
+            f["pintura"] = f["pintura"] or r["color"] or ""
+        else:
+            filas.append({"llegada": (r["primera_vez"] or "")[:10], "salida": (r["ultima_vez"] or "")[:10],
+                          "precio": r["precio_num"], "seccion": r["seccion"], "pintura": r["color"] or "",
+                          "lote": False, "fuentes": ["este notificador"]})
+    return sorted(filas, key=lambda f: f["llegada"] or "", reverse=True)
+
+
+def leer_rlshopnotify(producto_id):
+    """Pide el historial a rlshopnotify.com como mucho cada 12 h por artículo. Si falla, sigue sin él."""
+    clave = f"rsn:{producto_id}"
+    with conectar() as con:
+        pedido = fecha(meta(con, clave) or "")
+    if pedido and datetime.now(timezone.utc) - pedido < timedelta(hours=HORAS_CACHE_FICHA):
+        return
+    try:
+        filas = origenes.historial_rlshopnotify(producto_id)
+        with conectar() as con:
+            con.execute("DELETE FROM historial_rsn WHERE producto_id=?", (producto_id,))
+            con.executemany("INSERT OR REPLACE INTO historial_rsn VALUES (?,?,?,?,?,?,?,?)", [
+                (producto_id, r["id"] if r["id"] is not None else i, r["llegada"], r["salida"], r["precio"],
+                 r["seccion"], r["pintura"], int(r["lote"])) for i, r in enumerate(filas)])
+    except Exception as err:  # sin errores visibles: la ficha sigue con itemshop.gg y este notificador
+        log(f"rlshopnotify no respondió para el artículo {producto_id}: {err}")
+    with conectar() as con:
+        meta(con, clave, ahora())
+
+
 def ficha_api(consulta):
     """Todo sobre un artículo del catálogo. El historial detallado se pide a itemshop.gg al abrirla."""
     cid = consulta.get("id", [""])[0]
@@ -966,10 +1055,31 @@ def ficha_api(consulta):
                 meta(con, clave_cache, ahora())
         except Exception as err:
             detalle_error = f"No pude leer el historial de itemshop.gg: {err}"
+    if f["producto_id"]:
+        leer_rlshopnotify(f["producto_id"])
     with conectar() as con:
-        f["historial"] = [dict(r) for r in con.execute(
-            "SELECT llegada, salida, duracion, precio, seccion FROM historial_detalle WHERE producto_id=? "
-            "ORDER BY llegada DESC", (f["producto_id"],))]
+        itemshop = [dict(r) for r in con.execute(
+            "SELECT llegada, salida, precio, seccion FROM historial_detalle WHERE producto_id=?", (f["producto_id"],))]
+        rsn = [dict(r) for r in con.execute("SELECT * FROM historial_rsn WHERE producto_id=?", (f["producto_id"],))]
+    f["historial"] = combinar_historial(itemshop, rsn, propio)
+    if f["historial"]:
+        # veces / primera / última vez / último precio con el total combinado
+        h = f["historial"]
+        f["veces"] = max(f["veces"] or 0, len(h))
+        f["primera_vez"] = min(x for x in [r["llegada"] for r in h] + [f["primera_vez"] or "9999"] if x)
+        hoy = datetime.now(timezone.utc).strftime("%Y-%m-%d")
+        ultima = max(h, key=lambda r: (r["salida"] or r["llegada"] or ""))
+        ultima = min(ultima["salida"] or ultima["llegada"] or "", hoy)  # si sigue a la venta, la última vez es hoy
+        f["ultima_vez"] = min(max(f["ultima_vez"] or "", ultima), hoy + "T23:59:59Z") or None
+        con_precio = [r for r in h if r["precio"] is not None and not r["lote"]] or [r for r in h if r["precio"] is not None]
+        if con_precio:
+            f["ultimo_precio"] = max(con_precio, key=lambda r: r["llegada"] or "")["precio"]
+        f["pinturas"] = sorted(set(f["pinturas"]) | {r["pintura"] for r in h if r["pintura"]})
+        with conectar() as con:
+            con.execute("INSERT OR REPLACE INTO resumen_historial VALUES (?,?,?,?,?,?,?)", (
+                f["producto_id"], f["veces"], f["primera_vez"], f["ultima_vez"], f["ultimo_precio"],
+                json.dumps(f["pinturas"], ensure_ascii=False), ahora()))
+    f["url_rlshopnotify"] = origenes.URL_RLSHOPNOTIFY_WEB.format(f["producto_id"]) if f["producto_id"] else ""
     f["propio"] = [{k: r[k] for k in ("color", "precio", "seccion", "primera_vez", "ultima_vez", "apariciones",
                                        "en_tienda")} for r in sorted(propio, key=lambda r: r["ultima_vez"] or "", reverse=True)]
     f["historial_error"] = detalle_error

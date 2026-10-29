@@ -633,12 +633,16 @@ async function abrirFicha(id) {
   const rareza = colorSeguro(a.rareza_color) || "#8a94a8";
   const img = urlSegura(a.imagen);
   const dato = (t, v) => (v || v === 0 ? `<div class="dato"><dt>${esc(t)}</dt><dd>${esc(v)}</dd></div>` : "");
+  const nombresFuente = { "rlshopnotify": "rlshopnotify", "itemshop.gg": "itemshop.gg", "este notificador": "notificador" };
   const historial = a.historial.length ? `
       <div class="tabla-envoltura"><table class="tabla">
-        <thead><tr><th>Llegó</th><th>Se fue</th><th>Duración</th><th>Precio</th><th>Sección</th></tr></thead>
-        <tbody>${a.historial.map((h) => `<tr><td>${esc(fechaDia(h.llegada))}</td><td>${esc(fechaDia(h.salida) || h.salida)}</td>
-          <td>${esc(h.duracion)}</td><td>${esc(h.precio)}</td><td>${esc(h.seccion)}</td></tr>`).join("")}</tbody>
-      </table></div>` : `<p class="sutil">${a.slug_itemshop ? "Sin apariciones registradas." : "itemshop.gg no lo registró en la tienda (sus datos empiezan en septiembre de 2026)."}</p>`;
+        <thead><tr><th>Llegó</th><th>Se fue</th><th>Precio</th><th>Pintura</th><th>Sección</th><th>Fuente</th></tr></thead>
+        <tbody>${a.historial.map((h) => `<tr><td>${esc(fechaDia(h.llegada))}</td><td>${esc(fechaDia(h.salida) || h.salida || "")}</td>
+          <td>${h.precio != null ? `${esc(h.precio.toLocaleString("es"))} créditos` : ""}</td>
+          <td>${h.pintura ? tag(h.pintura, "", colorPintura(h.pintura) || "") : `<span class="sutil">—</span>`}</td>
+          <td>${esc(h.seccion)}${h.lote ? ` <span class="tag tag-neutro">lote</span>` : ""}</td>
+          <td>${h.fuentes.map((f) => `<span class="tag tag-fuente">${esc(nombresFuente[f] || f)}</span>`).join(" ")}</td></tr>`).join("")}</tbody>
+      </table></div>` : `<p class="sutil">Sin apariciones registradas en la tienda (rlshopnotify desde mayo de 2026, itemshop.gg desde septiembre de 2026).</p>`;
   const propio = a.propio.length ? `
     <section><h3>Visto por este notificador</h3>
       <div class="tabla-envoltura"><table class="tabla">
@@ -664,6 +668,7 @@ async function abrirFicha(id) {
           <button class="btn btn-principal btn-chico" data-crear-alerta-ficha="1">+ Alerta</button>
           ${urlSegura(a.url) ? `<a class="btn btn-chico" href="${esc(a.url)}" target="_blank" rel="noopener noreferrer">rl.source.gs ↗</a>` : ""}
           ${urlSegura(a.url_itemshop) ? `<a class="btn btn-chico" href="${esc(a.url_itemshop)}" target="_blank" rel="noopener noreferrer">itemshop.gg ↗</a>` : ""}
+          ${urlSegura(a.url_rlshopnotify) ? `<a class="btn btn-chico" href="${esc(a.url_rlshopnotify)}" target="_blank" rel="noopener noreferrer">rlshopnotify ↗</a>` : ""}
         </div>
       </div>
       <button class="btn btn-chico ficha-cerrar" data-cerrar-ficha="1" aria-label="Cerrar">✕</button>
@@ -673,7 +678,7 @@ async function abrirFicha(id) {
         ${a.origenes.length ? `<ul class="lista-origen">${a.origenes.map((o) => `<li>${esc(describirOrigen(o))} <span class="sutil">(${esc(o.fuente)})</span></li>`).join("")}</ul>`
           : `<p class="sutil">Desconocido: no figura en los Rocket Pass, packs ni otras listas de la wiki. Puede venir de cajas, drops, eventos, Twitch, lotes de la tienda u otros.</p>`}
       </section>
-      <section><h3>Historial en la tienda (itemshop.gg)</h3>${a.historial_error ? `<p class="error">${esc(a.historial_error)}</p>` : ""}${historial}</section>
+      <section><h3>Historial en la tienda (${a.historial.length} ${a.historial.length === 1 ? "aparición" : "apariciones"})</h3>${a.historial_error ? `<p class="error">${esc(a.historial_error)}</p>` : ""}${historial}</section>
       ${propio}
     </div>`;
 }

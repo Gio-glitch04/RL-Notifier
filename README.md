@@ -76,8 +76,15 @@ Los secretos van **solo** en `config.json`. Después de cambiarlo no hace falta 
 | Origen: packs DLC | rl.source.gs/packs | semanal |
 | Veces, última vez, precio y colores en la tienda | itemshop.gg (1 pedido) | diario |
 | Historial detallado de un artículo | itemshop.gg (1 pedido) | al abrir su ficha (se guarda 12 h) |
+| Historial con color y lotes (desde mayo de 2026) | rlshopnotify.com (1 pedido a su API pública) | al abrir su ficha (se guarda 12 h) |
 
-Límites: el historial de itemshop.gg empieza en septiembre de 2026 (antes de eso no hay "última vez").
+La ficha une las apariciones de rlshopnotify.com, itemshop.gg y este notificador: una misma rotación
+vista por dos fuentes cuenta una vez (mismo día ±1, mismo precio y, si se sabe, misma pintura) y cada fila
+dice de qué fuente sale. Veces, primera y última vez se recalculan con el total. Si rlshopnotify no
+responde, la ficha sigue con las otras fuentes.
+
+Límites: rlshopnotify registra desde mayo de 2026 e itemshop.gg desde septiembre de 2026; antes de eso
+no hay "última vez".
 La wiki llega hasta la temporada 24 del Rocket Pass; si aún no cargó una temporada nueva, esos artículos
 salen como "desconocido". Los lotes de la tienda no figuran como origen.
 
