@@ -114,6 +114,8 @@ main { padding: 0 24px 40px; }
 .ficha h2 { font-size: 22px; margin: 0 0 4px; }
 .ficha h3 { font-size: 14px; margin: 0 0 8px; text-transform: uppercase; letter-spacing: .5px; color: var(--sutil); }
 .ficha-cuerpo { padding: 0 18px 18px; display: flex; flex-direction: column; gap: 18px; }
+.modal-alerta { width: min(440px, 100%); }
+.modal-alerta #form-alerta { border: 0; }
 .ficha-cerrar { position: absolute; top: 12px; right: 12px; }
 .datos { display: grid; grid-template-columns: repeat(auto-fill, minmax(150px, 1fr)); gap: 8px; margin: 12px 0; }
 .dato { background: var(--panel-2); border: 1px solid var(--borde); border-radius: 8px; padding: 8px 10px; }
