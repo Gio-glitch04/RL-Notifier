@@ -31,6 +31,9 @@ En la página:
   color, categoría (Ruedas, Carrocería, Calcomanía…), rareza, tienda y precio máximo; todo lo que
   completes tiene que coincidir. La categoría distingue, por ejemplo, las ruedas Dodge Viper GTS-R de la
   carrocería del mismo nombre, y vale igual para la tienda de RL, la de Fortnite y el catálogo.
+  Por defecto una alerta vale para **ambas tiendas** (Rocket League y Rocket League en Fortnite).
+  Cada alerta muestra la imagen del artículo (de la tienda, el historial o el catálogo) y se pueden ver
+  como **tarjetas** o como **lista**; la página recuerda la elección.
   El botón **+ Alerta** de cada tarjeta la crea ya rellenada. Con **Nombre exacto**, "Ruinator" no
   coincide con "Ruinator: Inverted".
 - **Revisar ahora**: revisa la tienda en el momento.

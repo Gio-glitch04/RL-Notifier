@@ -258,17 +258,50 @@ async function pintarHistorial() {
     </tr>`).join("") || `<tr><td colspan="10" class="vacio">Nada con estos filtros.</td></tr>`;
 }
 
-function pintarAlertas() {
-  const alertas = estado.datos.alertas;
-  $("#lista-alertas").innerHTML = alertas.length ? alertas.map((al) => `
-    <li class="${al.activa ? "" : "inactiva"}">
-      <input type="checkbox" title="Activa" data-activar="${al.id}" ${al.activa ? "checked" : ""}>
-      <div class="desc">${esc(al.descripcion)}<br>
-        <span class="coinc ${al.coincidencias ? "si" : ""}">${al.coincidencias ? `★ ${al.coincidencias} en la tienda ahora` : "Nada en la tienda ahora"}</span></div>
-      <button class="btn btn-chico" data-editar="${al.id}">Editar</button>
-      <button class="btn btn-chico btn-peligro" data-borrar="${al.id}">Borrar</button>
-    </li>`).join("") : `<li class="sutil">Todavía no tienes alertas.</li>`;
+// Tarjetas o lista: se recuerda en este navegador (si el navegador no deja guardar, queda "tarjetas")
+function vistaAlertas() {
+  if (estado.vistaAlertas) return estado.vistaAlertas;
+  try { return localStorage.getItem("vistaAlertas") === "lista" ? "lista" : "tarjetas"; } catch (e) { return "tarjetas"; }
 }
+
+function imagenAlerta(al) {
+  const img = urlSegura(al.imagen);
+  return img ? `<img src="${esc(img)}" alt="" loading="lazy" referrerpolicy="no-referrer" class="${al.mezcla === "screen" ? "mezcla-screen" : ""}">`
+    : `<span class="generico" title="Sin imagen">🔔</span>`;
+}
+
+function pintarAlertas() {
+  const alertas = estado.datos.alertas, vista = vistaAlertas();
+  document.querySelectorAll("[data-vista-alertas]").forEach((b) => b.classList.toggle("activo", b.dataset.vistaAlertas === vista));
+  const lista = $("#lista-alertas");
+  lista.classList.toggle("tarjetas", vista === "tarjetas");
+  const coinc = (al) => `<span class="coinc ${al.coincidencias ? "si" : ""}">${al.coincidencias ? `★ ${al.coincidencias} en la tienda ahora` : "Nada en la tienda ahora"}</span>`;
+  const activa = (al) => `<input type="checkbox" title="Activa" data-activar="${al.id}" ${al.activa ? "checked" : ""}>`;
+  const botones = (al) => `<button class="btn btn-chico" data-editar="${al.id}">Editar</button>
+      <button class="btn btn-chico btn-peligro" data-borrar="${al.id}">Borrar</button>`;
+  if (!alertas.length) {
+    lista.innerHTML = `<li class="sutil">Todavía no tienes alertas.</li>`;
+    return;
+  }
+  lista.innerHTML = alertas.map((al) => vista === "tarjetas" ? `
+    <li class="${al.activa ? "" : "inactiva"} ${al.coincidencias ? "coincide" : ""}">
+      <div class="alerta-img">${imagenAlerta(al)}</div>
+      <div class="alerta-cuerpo"><div class="desc">${esc(al.descripcion)}</div>${coinc(al)}</div>
+      <div class="alerta-botones">${activa(al)}${botones(al)}</div>
+    </li>` : `
+    <li class="${al.activa ? "" : "inactiva"}">
+      ${activa(al)}
+      <div class="mini">${imagenAlerta(al)}</div>
+      <div class="desc">${esc(al.descripcion)}<br>${coinc(al)}</div>
+      ${botones(al)}
+    </li>`).join("");
+}
+
+document.querySelectorAll("[data-vista-alertas]").forEach((b) => b.addEventListener("click", () => {
+  try { localStorage.setItem("vistaAlertas", b.dataset.vistaAlertas); } catch (e) { /* sin almacenamiento: solo esta vez */ }
+  estado.vistaAlertas = b.dataset.vistaAlertas;
+  pintarAlertas();
+}));
 
 // ---------- formulario de alertas ----------
 function llenarFormulario(al) {
@@ -328,7 +361,7 @@ document.addEventListener("click", async (ev) => {
     if (!a) return;
     cambiarVista("alertas");
     // Alerta exacta por nombre; el color queda para completar si se quiere uno concreto
-    llenarFormulario({ nombre: a.nombre_completo || a.nombre, color: a.color || "", tienda: a.tienda || "Rocket League",
+    llenarFormulario({ nombre: a.nombre_completo || a.nombre, color: a.color || "", tienda: "", // ambas tiendas
       tipo: a.categoria || "", exacto: 1 });
     if (!a.color) $("#form-alerta").color.focus();
   }
@@ -549,7 +582,7 @@ document.addEventListener("click", (ev) => {
     const a = estado.fichaActual;
     cerrarFicha();
     cambiarVista("alertas");
-    llenarFormulario({ nombre: a.nombre_completo || a.nombre, tienda: "Rocket League", tipo: a.categoria || "", exacto: 1 });
+    llenarFormulario({ nombre: a.nombre_completo || a.nombre, tienda: "", tipo: a.categoria || "", exacto: 1 });
     $("#form-alerta").color.focus();
   }
 });

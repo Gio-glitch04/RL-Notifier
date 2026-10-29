@@ -145,6 +145,25 @@ main { padding: 0 24px 40px; }
 .lista-alertas li { display: flex; gap: 10px; align-items: center; padding: 10px; border-radius: 8px; background: var(--panel-2); }
 .lista-alertas li.inactiva { opacity: .55; }
 .lista-alertas .desc { flex: 1; min-width: 0; overflow-wrap: anywhere; }
+.alertas-cabecera { display: flex; justify-content: space-between; align-items: center; gap: 10px; margin-bottom: 8px; }
+.alertas-cabecera h2 { margin: 0; }
+.selector-vista { display: inline-flex; gap: 4px; }
+.selector-vista .btn.activo { background: var(--acento); border-color: var(--acento); color: #fff; }
+.mini { width: 52px; height: 40px; flex: none; border-radius: 6px; display: grid; place-items: center; overflow: hidden;
+  background: #11151f; }
+.mini img, .alerta-img img { max-width: 100%; max-height: 100%; object-fit: contain; }
+.mini img.mezcla-screen, .alerta-img img.mezcla-screen { mix-blend-mode: screen; }
+.generico { color: var(--sutil); font-size: 20px; }
+.lista-alertas.tarjetas { display: grid; grid-template-columns: repeat(auto-fill, minmax(190px, 1fr)); gap: 12px; }
+.lista-alertas.tarjetas li { flex-direction: column; align-items: stretch; padding: 0; overflow: hidden;
+  border: 1px solid var(--borde); }
+.lista-alertas.tarjetas li.coincide { border-color: var(--alerta); box-shadow: 0 0 0 1px var(--alerta); }
+.alerta-img { aspect-ratio: 4 / 3; display: grid; place-items: center; padding: 10px;
+  background: radial-gradient(75% 75% at 50% 55%, rgb(255 255 255 / .06), transparent), #11151f; }
+.alerta-img .generico { font-size: 44px; }
+.alerta-cuerpo { padding: 10px 12px; display: flex; flex-direction: column; gap: 6px; flex: 1; }
+.alerta-botones { display: flex; gap: 6px; align-items: center; padding: 0 12px 12px; }
+.alerta-botones .btn { flex: 1; }
 .coinc { font-size: 12px; color: var(--sutil); }
 .coinc.si { color: var(--alerta); }
 
