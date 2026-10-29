@@ -18,11 +18,14 @@ En la página:
   precio y tiempo restante. Buscador y filtros arriba. Los artículos que coinciden con una alerta
   tienen borde amarillo y la marca **★ Alerta**.
 - **Catálogo**: todos los artículos de Rocket League (unos 9.300), aunque nunca hayan salido en la tienda,
-  por ejemplo ruedas de pase como Ruinator o Haunted Hoss. Marca si están en la tienda hoy, cuándo los
-  viste por última vez (según tu historial) y tiene **+ Alerta** para crear una alerta por nombre exacto
-  (puedes agregar un color). Filtro "Nunca vistos en la tienda" para buscar rarezas.
-  Se descarga solo la primera vez y luego una vez por semana; también con el botón **Actualizar catálogo**.
-  Fuente: rl.source.gs (15 descargas por actualización, con pausa entre cada una).
+  por ejemplo ruedas de pase como Ruinator o Haunted Hoss. Cada tarjeta muestra:
+  - **Origen**: Rocket Pass (cuál y en qué nivel), pack DLC, tienda de esports, recompensa competitiva,
+    exclusivo de plataforma o torneos. Si no figura en ninguna lista dice "desconocido" (suelen ser cajas,
+    drops, eventos o lotes de la tienda).
+  - **Última vez en tienda**, con precio y cuántas veces apareció.
+  Clic en la imagen o el nombre abre la **ficha**: colores vistos, cada paso por la tienda (fecha, precio,
+  sección) y lo que registró este notificador. **+ Alerta** crea una alerta por nombre exacto (puedes agregar un color).
+  Filtros por tipo, rareza, origen, Rocket Pass y "Nunca vistos en la tienda".
 - **Historial**: todo lo que se vio alguna vez, con primera y última vez y cuántas veces volvió.
 - **Alertas**: crea, edita, desactiva o borra alertas (sin límite). Cada alerta puede filtrar por nombre,
   color, tipo, rareza, tienda y precio máximo; todo lo que completes tiene que coincidir.
@@ -52,10 +55,25 @@ Los secretos van **solo** en `config.json`. Después de cambiarlo no hace falta 
 
 `"avisar_todo_lo_nuevo": true` además manda una notificación de Windows con el resumen de lo nuevo en cada tienda.
 
+## De dónde salen los datos del catálogo
+
+| Dato | Fuente | Cada cuánto |
+|---|---|---|
+| Lista de artículos, imagen, rareza | rl.source.gs (15 descargas) | semanal o botón **Actualizar catálogo** |
+| Origen: Rocket Pass y otras listas | wiki de Rocket League en Fandom (API, unos 25 pedidos) | semanal |
+| Origen: packs DLC | rl.source.gs/packs | semanal |
+| Veces, última vez, precio y colores en la tienda | itemshop.gg (1 pedido) | diario |
+| Historial detallado de un artículo | itemshop.gg (1 pedido) | al abrir su ficha (se guarda 12 h) |
+
+Límites: el historial de itemshop.gg empieza en septiembre de 2026 (antes de eso no hay "última vez").
+La wiki llega hasta la temporada 24 del Rocket Pass; si aún no cargó una temporada nueva, esos artículos
+salen como "desconocido". Los lotes de la tienda no figuran como origen.
+
 ## Archivos
 
 - `notificador.py`: servidor web, base de datos, alertas, avisos y horario.
 - `web/`: la página (HTML, CSS y JS).
+- `origenes.py`: origen e historial de tienda para el catálogo (wiki, itemshop.gg, packs).
 - `rl_tienda.py`: lectura de las tiendas (itemshop.gg con RL Portal de respaldo, y fortnite-api.com).
   Sigue funcionando solo, en consola: `python rl_tienda.py --listar`, `--una-vez`, `--probar`.
 - `tienda.db`: base de datos (se crea sola). Bórrala para empezar de cero.

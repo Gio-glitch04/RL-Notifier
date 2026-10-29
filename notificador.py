@@ -32,6 +32,7 @@ from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
 from pathlib import Path
 from urllib.parse import parse_qs, urlsplit
 
+import origenes
 import rl_tienda as fuentes
 from rl_tienda import log
 
@@ -69,6 +70,10 @@ RAREZAS_CATALOGO = {
     "Premium": ("Premium", "#38d39f"), "Legacy": ("Legacy", "#9aa3b2"),
 }
 DIAS_ENTRE_CATALOGOS = 7
+HORAS_ENTRE_HISTORIALES = 20  # resumen de itemshop.gg: 1 pedido por día
+HORAS_CACHE_FICHA = 12  # historial detallado de un artículo (al abrir su ficha)
+ORIGENES_CONOCIDOS = ("Rocket Pass", "Pack", "Tienda de esports", "Recompensa competitiva",
+                      "Exclusivo de plataforma", "Torneos")
 RAREZAS = {"common", "uncommon", "rare", "very rare", "import", "exotic", "black market", "limited",
            "legendary", "premium"}
 
@@ -108,6 +113,18 @@ CREATE TABLE IF NOT EXISTS catalogo (
     rareza TEXT, calidad TEXT, rareza_color TEXT, imagen TEXT, url TEXT, actualizado TEXT
 );
 CREATE INDEX IF NOT EXISTS catalogo_nombre ON catalogo (nombre_norm);
+CREATE TABLE IF NOT EXISTS origenes (
+    catalogo_id TEXT, origen TEXT, detalle TEXT DEFAULT '', nivel INTEGER, fuente TEXT,
+    PRIMARY KEY (catalogo_id, origen, detalle)
+);
+CREATE TABLE IF NOT EXISTS historial_externo (
+    producto_id INTEGER PRIMARY KEY, veces INTEGER, primera TEXT, ultima TEXT, ultimo_precio INTEGER,
+    en_tienda INTEGER, pinturas TEXT, slug TEXT, actualizado TEXT
+);
+CREATE TABLE IF NOT EXISTS historial_detalle (
+    producto_id INTEGER, orden INTEGER, llegada TEXT, salida TEXT, duracion TEXT, precio TEXT, seccion TEXT,
+    PRIMARY KEY (producto_id, orden)
+);
 CREATE TABLE IF NOT EXISTS avisos (
     alerta_id INTEGER, articulo_id TEXT, aparicion TEXT, enviado TEXT,
     PRIMARY KEY (alerta_id, articulo_id, aparicion)
@@ -139,6 +156,11 @@ def iniciar_db(config):
                 con.execute(f"ALTER TABLE articulos ADD COLUMN {col} {tipo}")
         if "exacto" not in {f["name"] for f in con.execute("PRAGMA table_info(alertas)")}:
             con.execute("ALTER TABLE alertas ADD COLUMN exacto INTEGER DEFAULT 0")
+        columnas = {f["name"] for f in con.execute("PRAGMA table_info(catalogo)")}
+        for col in ("nombre_completo", "clave"):
+            if col not in columnas:
+                con.execute(f"ALTER TABLE catalogo ADD COLUMN {col} TEXT DEFAULT ''")
+        con.execute("CREATE INDEX IF NOT EXISTS catalogo_clave ON catalogo (clave)")
         if not meta(con, "deseos_importados"):
             for palabra in config.get("lista_de_deseos", []):
                 p = palabra.strip()
@@ -435,15 +457,26 @@ class EstadoCatalogo:
     error = ""
 
 
+def nombre_completo(nombre, variante, tipo):
+    """Las calcomanías se llaman como en la tienda: 'Outlaw: Sally' (auto + nombre)."""
+    if tipo == "Decal" and variante and not nombre.lower().startswith(variante.lower()):
+        return f"{variante}: {nombre}"
+    return nombre
+
+
+def slug_catalogo(catalogo_id):
+    return catalogo_id.rstrip("/").rsplit("/", 1)[-1]
+
+
 def actualizar_catalogo():
-    """Descarga el catálogo completo (una categoría por vez, con pausa entre pedidos)."""
+    """Descarga el catálogo y el origen de cada artículo (una categoría por vez, con pausa)."""
     if not EstadoCatalogo.lock.acquire(blocking=False):
         return
     EstadoCatalogo.actualizando, EstadoCatalogo.error = True, ""
     momento, total, errores = ahora(), 0, []
     try:
         for i, (categoria, tipo) in enumerate(CATEGORIAS.items(), 1):
-            EstadoCatalogo.progreso = f"{i}/{len(CATEGORIAS)}: {tipo}"
+            EstadoCatalogo.progreso = f"catálogo {i}/{len(CATEGORIAS)}: {tipo}"
             if i > 1:
                 threading.Event().wait(1.5)  # sin saturar el sitio
             try:
@@ -456,24 +489,115 @@ def actualizar_catalogo():
                     if not it.get("n") or not it.get("h"):
                         continue
                     rareza, color = RAREZAS_CATALOGO.get(it.get("f"), (it.get("f") or "", "#9aa3b2"))
-                    con.execute("INSERT OR REPLACE INTO catalogo VALUES (?,?,?,?,?,?,?,?,?,?,?,?)", (
-                        it["h"], it.get("d"), it["n"], normalizar(it["n"]), it.get("k") or "", tipo, rareza,
-                        it.get("q") or "", color, it.get("i") or "", URL_CATALOGO_BASE + it["h"], momento))
+                    completo = nombre_completo(it["n"], it.get("k") or "", tipo)
+                    con.execute("INSERT OR REPLACE INTO catalogo (id, producto_id, nombre, nombre_norm, variante, "
+                                "tipo, rareza, calidad, rareza_color, imagen, url, actualizado, nombre_completo, clave) "
+                                "VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?)", (
+                                    it["h"], it.get("d"), it["n"], normalizar(completo), it.get("k") or "", tipo,
+                                    rareza, it.get("q") or "", color, it.get("i") or "", URL_CATALOGO_BASE + it["h"],
+                                    momento, completo, origenes.slug(completo)))
             total += len(filas)
         with conectar() as con:
             if total:
                 meta(con, "catalogo_actualizado", momento)
-            # Si una categoría falló, se conserva lo que ya había de ella
-            n = con.execute("SELECT COUNT(*) FROM catalogo").fetchone()[0]
+            n = con.execute("SELECT COUNT(*) FROM catalogo").fetchone()[0]  # si algo falló, queda lo anterior
+        log(f"Catálogo actualizado: {total} artículos descargados, {n} en total")
+        for nombre, paso in (("origen", actualizar_origenes), ("historial de itemshop.gg", actualizar_historial_externo)):
+            try:
+                EstadoCatalogo.progreso = nombre
+                paso()
+            except Exception as err:
+                errores.append(f"{nombre}: {err}")
         EstadoCatalogo.error = "; ".join(errores)
-        log(f"Catálogo actualizado: {total} artículos descargados, {n} en total"
-            + (f"; errores: {EstadoCatalogo.error}" if errores else ""))
+        if errores:
+            log("Errores en el catálogo: " + EstadoCatalogo.error)
     except Exception as err:
         EstadoCatalogo.error = str(err)
         log(f"Error actualizando el catálogo: {err}")
     finally:
         EstadoCatalogo.actualizando, EstadoCatalogo.progreso = False, ""
         EstadoCatalogo.lock.release()
+
+
+def indice_catalogo(con):
+    """(tipo, clave) -> ids del catálogo. La clave sale del nombre y de la dirección del artículo."""
+    indice = {}
+    for f in con.execute("SELECT id, tipo, clave FROM catalogo"):
+        claves = {f["clave"], slug_catalogo(f["id"]), re.sub(r"-\d+$", "", slug_catalogo(f["id"]))}
+        for c in claves - {""}:
+            indice.setdefault((f["tipo"], c), set()).add(f["id"])
+            indice.setdefault(("", c), set()).add(f["id"])
+    return indice
+
+
+def actualizar_origenes():
+    """Origen de cada artículo: Rocket Pass y otros (wiki) + packs DLC (rl.source.gs). Semanal."""
+    datos_wiki = origenes.origenes_wiki()
+    datos_packs = origenes.origenes_packs()
+    with conectar() as con:
+        indice = indice_catalogo(con)
+        ids = {f["id"] for f in con.execute("SELECT id FROM catalogo")}
+        filas, sin_unir = set(), 0
+        por_tipo = {}
+        for (tipo, clave), destino in indice.items():
+            por_tipo.setdefault(tipo, []).append((clave, destino))
+        for o in datos_wiki:
+            destino = indice.get((o["tipo"], origenes.slug(o["nombre"]))) or set()
+            if not destino and o["tipo"] == "Decal" and ":" in o["nombre"]:
+                # "Nomad: Enginus" puede figurar como "nomad-gxt-enginus": mismo auto al principio y mismo nombre al final
+                auto, nombre = (origenes.slug(x) for x in o["nombre"].split(":", 1))
+                destino = set().union(*[d for c, d in por_tipo.get("Decal", [])
+                                        if c.startswith(auto.split("-")[0] + "-") and c.endswith("-" + nombre)] or [set()])
+            if not destino:
+                sin_unir += 1
+            for cid in destino:
+                filas.add((cid, o["origen"], o["detalle"], o["nivel"], "wiki"))
+        for o in datos_packs:
+            cid = o["url_catalogo"].replace(URL_CATALOGO_BASE, "")
+            if cid in ids:
+                filas.add((cid, o["origen"], o["detalle"], None, "rl.source.gs"))
+        # Si un mismo origen aparece con y sin nivel, se queda el que tiene nivel
+        mejores = {}
+        for cid, origen, detalle, nivel, fuente in filas:
+            clave = (cid, origen, detalle)
+            if clave not in mejores or (mejores[clave][3] is None and nivel is not None):
+                mejores[clave] = (cid, origen, detalle, nivel, fuente)
+        if mejores:
+            con.execute("DELETE FROM origenes")
+            con.executemany("INSERT INTO origenes VALUES (?,?,?,?,?)", list(mejores.values()))
+            meta(con, "origenes_actualizado", ahora())
+    log(f"Origen: {len(mejores)} datos para {len({m[0] for m in mejores})} artículos "
+        f"({sin_unir} nombres de la wiki sin artículo equivalente)")
+
+
+def actualizar_historial_externo():
+    """Resumen de itemshop.gg: veces, primera y última vez, último precio y colores. Diario."""
+    datos = origenes.historial_itemshop()
+    momento = ahora()
+    with conectar() as con:
+        con.executemany("INSERT OR REPLACE INTO historial_externo VALUES (?,?,?,?,?,?,?,?,?)", [
+            (d["producto_id"], d["veces"], d["primera"], d["ultima"], d["ultimo_precio"], d["en_tienda"],
+             json.dumps(d["pinturas"], ensure_ascii=False), d["slug"], momento) for d in datos])
+        meta(con, "historial_externo_actualizado", momento)
+    log(f"Historial de itemshop.gg: {len(datos)} artículos")
+
+
+def historial_vencido():
+    with conectar() as con:
+        ultima = fecha(meta(con, "historial_externo_actualizado") or "")
+    return ultima is None or datetime.now(timezone.utc) - ultima > timedelta(hours=HORAS_ENTRE_HISTORIALES)
+
+
+def actualizar_historial_en_fondo():
+    def tarea():
+        if EstadoCatalogo.lock.acquire(blocking=False):
+            try:
+                actualizar_historial_externo()
+            except Exception as err:
+                log(f"No pude leer el historial de itemshop.gg: {err}")
+            finally:
+                EstadoCatalogo.lock.release()
+    threading.Thread(target=tarea, daemon=True).start()
 
 
 def catalogo_vencido():
@@ -516,8 +640,11 @@ def programador():
             Estado.proxima_periodica = n + timedelta(minutes=max(5, int(config.get("minutos_entre_revisiones", 60))))
             if toca_fija or Estado.proxima_fija is None:
                 Estado.proxima_fija = proxima_hora_fija(config, n)
-            if not EstadoCatalogo.actualizando and catalogo_vencido():  # una vez por semana
-                actualizar_catalogo_en_fondo()
+            if not EstadoCatalogo.actualizando:
+                if catalogo_vencido():  # catálogo y origen: una vez por semana
+                    actualizar_catalogo_en_fondo()
+                elif historial_vencido():  # historial de itemshop.gg: una vez por día
+                    actualizar_historial_en_fondo()
         REVISAR_YA.wait(timeout=20)
 
 
@@ -564,12 +691,70 @@ def patron_like(palabra):
     return "%" + palabra.replace("\\", "\\\\").replace("%", "\\%").replace("_", "\\_") + "%"
 
 
+def orden_pase(detalle):
+    """Rocket Pass 1..9 (antes del free-to-play) primero, luego Temporada 1..N."""
+    m = re.search(r"(\d+)", detalle or "")
+    return (0 if detalle.startswith("Rocket Pass") else 1, int(m[1]) if m else 0, detalle)
+
+
+def vistos_propios(con):
+    """Lo que registró este notificador, unido al catálogo por dirección o por nombre."""
+    vistos = {}
+    for f in con.execute("SELECT * FROM articulos WHERE tienda='Rocket League'"):
+        url = f["url"] or ""
+        ids = []
+        if url.startswith(URL_CATALOGO_BASE):
+            ids = [r[0] for r in con.execute("SELECT id FROM catalogo WHERE id=?", (url.replace(URL_CATALOGO_BASE, ""),))]
+        if not ids:
+            ids = [r[0] for r in con.execute("SELECT id FROM catalogo WHERE clave=? OR nombre_norm=?",
+                                             (origenes.slug(f["nombre"]), normalizar(f["nombre"])))]
+        for cid in ids:
+            v = vistos.setdefault(cid, {"ultima": "", "hoy": False, "veces": 0, "filas": []})
+            v["ultima"] = max(v["ultima"], f["ultima_vez"] or "")
+            v["hoy"] = v["hoy"] or bool(f["en_tienda"])
+            v["veces"] += f["apariciones"] or 0
+            v["filas"].append(dict(f))
+    return vistos
+
+
+def datos_catalogo(con):
+    """Todo lo necesario para mostrar y filtrar el catálogo, en pocas consultas."""
+    origen = {}
+    for f in con.execute("SELECT * FROM origenes"):
+        origen.setdefault(f["catalogo_id"], []).append(dict(f))
+    externo = {f["producto_id"]: dict(f) for f in con.execute("SELECT * FROM historial_externo")}
+    reciente = iso(datetime.now(timezone.utc) - timedelta(hours=30))
+    return origen, externo, vistos_propios(con), reciente
+
+
+def completar(f, origen, externo, vistos, reciente):
+    """Agrega a una fila del catálogo su origen y su paso por la tienda (propio + itemshop.gg)."""
+    f["origenes"] = sorted(origen.get(f["id"], []), key=lambda o: (o["origen"] != "Rocket Pass", orden_pase(o["detalle"])))
+    ext = externo.get(f["producto_id"])
+    v = vistos.get(f["id"])
+    ultima_ext = (ext or {}).get("ultima") or ""
+    f["ultima_vez"] = max((v or {}).get("ultima") or "", ultima_ext) or None
+    f["en_tienda"] = bool((v and v["hoy"]) or (ext and ext["en_tienda"] and (ext["actualizado"] or "") >= reciente))
+    f["veces"] = max((v or {}).get("veces") or 0, (ext or {}).get("veces") or 0)
+    primeras = [(ext or {}).get("primera")] + [r["primera_vez"] for r in (v or {}).get("filas", [])]
+    f["primera_vez"] = min((x for x in primeras if x), default=None)
+    f["ultimo_precio"] = (ext or {}).get("ultimo_precio")
+    if f["ultimo_precio"] is None and v:
+        ultima_fila = max(v["filas"], key=lambda r: r["ultima_vez"] or "")
+        f["ultimo_precio"] = ultima_fila["precio_num"]
+    f["pinturas"] = json.loads(ext["pinturas"]) if ext and ext.get("pinturas") else []
+    if v:
+        f["pinturas"] = sorted(set(f["pinturas"]) | {r["color"] for r in v["filas"] if r["color"]})
+    f["slug_itemshop"] = (ext or {}).get("slug") or ""
+    return f
+
+
 def catalogo_api(consulta):
-    q = normalizar(consulta.get("q", [""])[0]).strip()
-    tipo, rareza = consulta.get("tipo", [""])[0], consulta.get("rareza", [""])[0]
-    vista = consulta.get("vista", [""])[0]  # "", "nunca", "visto", "hoy", "alerta"
+    arg = lambda k: consulta.get(k, [""])[0]
+    q = normalizar(arg("q")).strip()
+    tipo, rareza, vista, filtro_origen, pase = arg("tipo"), arg("rareza"), arg("vista"), arg("origen"), arg("pase")
     try:
-        pagina = max(0, int(consulta.get("pagina", ["0"])[0] or 0))
+        pagina = max(0, int(arg("pagina") or 0))
     except ValueError:
         pagina = 0
     por_pagina = 120
@@ -587,25 +772,27 @@ def catalogo_api(consulta):
     args.append(q)
     with conectar() as con:
         filas = [dict(f) for f in con.execute(sql, args)]
-        vistos = {}
-        for f in con.execute("SELECT nombre, MAX(ultima_vez) AS ultima, MAX(en_tienda) AS hoy, "
-                             "SUM(apariciones) AS veces FROM articulos WHERE tienda='Rocket League' "
-                             "GROUP BY lower(nombre)"):
-            vistos[normalizar(f["nombre"])] = dict(f)
+        origen, externo, vistos, reciente = datos_catalogo(con)
         alertas = alertas_activas(con)
         tipos = [r[0] for r in con.execute("SELECT DISTINCT tipo FROM catalogo ORDER BY tipo")]
         rarezas = [r[0] for r in con.execute("SELECT DISTINCT rareza FROM catalogo ORDER BY rareza")]
+        pases = sorted({r[0] for r in con.execute("SELECT DISTINCT detalle FROM origenes WHERE origen='Rocket Pass'")},
+                       key=orden_pase)
         total_catalogo = con.execute("SELECT COUNT(*) FROM catalogo").fetchone()[0]
         actualizado = meta(con, "catalogo_actualizado")
-    for f in filas:
-        v = vistos.get(f["nombre_norm"])
-        f["ultima_vez"] = v["ultima"] if v else None
-        f["en_tienda"] = bool(v and v["hoy"])
-        f["veces"] = v["veces"] if v else 0
+        historial_actualizado = meta(con, "historial_externo_actualizado")
+    filas = [completar(f, origen, externo, vistos, reciente) for f in filas]
+    if filtro_origen == "desconocido":
+        filas = [f for f in filas if not f["origenes"]]
+    elif filtro_origen:
+        filas = [f for f in filas if any(o["origen"] == filtro_origen for o in f["origenes"])]
+    if pase:
+        filas = [f for f in filas if any(o["origen"] == "Rocket Pass" and o["detalle"] == pase for o in f["origenes"])]
 
     def alertas_de(f):
         # El catálogo no tiene color ni precio: se marcan las alertas por nombre (o tipo) sin esos filtros
-        a = {"nombre": f["nombre"], "tipo": f["tipo"], "rareza": f["rareza"], "tienda": "Rocket League"}
+        a = {"nombre": f["nombre_completo"] or f["nombre"], "tipo": f["tipo"], "rareza": f["rareza"],
+             "tienda": "Rocket League"}
         return [al["id"] for al in alertas if not al.get("color") and al.get("precio_max") is None
                 and (al.get("nombre") or al.get("tipo")) and coincide(al, a)]
 
@@ -623,9 +810,47 @@ def catalogo_api(consulta):
         f["alertas"] = alertas_de(f)
         f.pop("nombre_norm", None)
     return {"articulos": filas, "total": total, "pagina": pagina, "por_pagina": por_pagina,
-            "tipos": tipos, "rarezas": rarezas, "total_catalogo": total_catalogo, "actualizado": actualizado,
+            "tipos": tipos, "rarezas": rarezas, "origenes": list(ORIGENES_CONOCIDOS), "pases": pases,
+            "total_catalogo": total_catalogo, "actualizado": actualizado,
+            "historial_actualizado": historial_actualizado,
             "actualizando": EstadoCatalogo.actualizando, "progreso": EstadoCatalogo.progreso,
             "error": EstadoCatalogo.error}
+
+
+def ficha_api(consulta):
+    """Todo sobre un artículo del catálogo. El historial detallado se pide a itemshop.gg al abrirla."""
+    cid = consulta.get("id", [""])[0]
+    with conectar() as con:
+        fila = con.execute("SELECT * FROM catalogo WHERE id=?", (cid,)).fetchone()
+        if not fila:
+            raise ValueError("Ese artículo no está en el catálogo")
+        f = completar(dict(fila), *datos_catalogo(con))
+        propio = vistos_propios(con).get(cid, {}).get("filas", [])
+        clave_cache = f"detalle:{f['producto_id']}"
+        pedido = fecha(meta(con, clave_cache) or "")
+    detalle_error = ""
+    fresco = pedido and datetime.now(timezone.utc) - pedido < timedelta(hours=HORAS_CACHE_FICHA)
+    if f["slug_itemshop"] and not fresco:
+        try:
+            filas = origenes.historial_detalle_itemshop(f["slug_itemshop"])
+            with conectar() as con:
+                con.execute("DELETE FROM historial_detalle WHERE producto_id=?", (f["producto_id"],))
+                con.executemany("INSERT INTO historial_detalle VALUES (?,?,?,?,?,?,?)", [
+                    (f["producto_id"], i, r["llegada"], r["salida"], r["duracion"], r["precio"], r["seccion"])
+                    for i, r in enumerate(filas)])
+                meta(con, clave_cache, ahora())
+        except Exception as err:
+            detalle_error = f"No pude leer el historial de itemshop.gg: {err}"
+    with conectar() as con:
+        f["historial"] = [dict(r) for r in con.execute(
+            "SELECT llegada, salida, duracion, precio, seccion FROM historial_detalle WHERE producto_id=? "
+            "ORDER BY llegada DESC", (f["producto_id"],))]
+    f["propio"] = [{k: r[k] for k in ("color", "precio", "seccion", "primera_vez", "ultima_vez", "apariciones",
+                                       "en_tienda")} for r in sorted(propio, key=lambda r: r["ultima_vez"] or "", reverse=True)]
+    f["historial_error"] = detalle_error
+    f["url_itemshop"] = f"{origenes.URL_ITEMSHOP_CATALOGO}/{f['slug_itemshop']}" if f["slug_itemshop"] else ""
+    f.pop("nombre_norm", None)
+    return f
 
 
 def historial_api():
@@ -707,6 +932,8 @@ class Manejador(BaseHTTPRequestHandler):
                 return self.responder(200, historial_api())
             if ruta == "/api/catalogo":
                 return self.responder(200, catalogo_api(parse_qs(urlsplit(self.path).query)))
+            if ruta == "/api/catalogo/ficha":
+                return self.responder(200, ficha_api(parse_qs(urlsplit(self.path).query)))
             self.responder(404, {"error": "no existe"})
         except Exception as err:
             self.responder(500, {"error": str(err)})
