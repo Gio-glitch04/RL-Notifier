@@ -692,25 +692,48 @@ def iso(d):
     return d.strftime("%Y-%m-%dT%H:%M:%SZ") if d else None
 
 
-def imagen_alerta(con, al, en_tienda, historial):
-    """Imagen para mostrar una alerta: tienda de hoy, luego historial, luego catálogo. '' si no hay."""
-    for grupo in (en_tienda, historial):
-        for a in grupo:
-            if a.get("imagen") and coincide(al, a):
-                return a["imagen"], a.get("mezcla") or ""
+def articulo_alerta(con, al, en_tienda, historial):
+    """El artículo que representa una alerta: imagen, título, rareza y su id en el catálogo (para la ficha).
+
+    Busca en la tienda de hoy, el historial y el catálogo, respetando nombre y categoría.
+    Una alerta sin nombre (p. ej. "toda rueda Black Market") no apunta a un artículo concreto.
+    """
+    categoria = categoria_de(al.get("tipo"))
+    vacio = {"imagen": "", "mezcla": "", "titulo": "", "rareza": "", "rareza_color": "", "catalogo_id": ""}
+    en_venta = next((a for grupo in (en_tienda, historial) for a in grupo if a.get("imagen") and coincide(al, a)), None)
     nombre = normalizar(al.get("nombre")).strip()
     if not nombre:
-        return "", ""
-    categoria = categoria_de(al.get("tipo"))
-    filas = con.execute("SELECT imagen, tipo FROM catalogo WHERE nombre_norm=? AND imagen<>''", (nombre,)).fetchall()
+        return {**vacio, "titulo": categoria or "Cualquier artículo",
+                "imagen": (en_venta or {}).get("imagen", ""), "mezcla": (en_venta or {}).get("mezcla") or ""}
+    columnas = "id, nombre, nombre_completo, tipo, rareza, rareza_color, imagen"
+    filas = con.execute(f"SELECT {columnas} FROM catalogo WHERE nombre_norm=?", (nombre,)).fetchall()
     if not filas and not al.get("exacto"):
-        filas = con.execute("SELECT imagen, tipo FROM catalogo WHERE nombre_norm LIKE ? ESCAPE '\\' AND imagen<>'' "
+        filas = con.execute(f"SELECT {columnas} FROM catalogo WHERE nombre_norm LIKE ? ESCAPE '\\' "
                             "ORDER BY length(nombre_norm) LIMIT 50", (patron_like(nombre),)).fetchall()
     if categoria:
         filas = [f for f in filas if categoria_de(f["tipo"]) == categoria]
-    else:  # sin categoría, la carrocería es la imagen más representativa
+    elif en_venta and en_venta.get("tienda") == "Rocket League":  # el mismo artículo que está o estuvo en venta
+        en_venta_id = (en_venta.get("url") or "").replace(URL_CATALOGO_BASE, "")
+        filas = sorted(filas, key=lambda f: (f["id"] != en_venta_id,
+                                             categoria_de(f["tipo"]) != categoria_de(en_venta.get("tipo"))))
+    else:  # sin categoría, la carrocería es la más representativa
         filas = sorted(filas, key=lambda f: f["tipo"] != "Body")
-    return (filas[0]["imagen"], "") if filas else ("", "")
+    cat = dict(filas[0]) if filas else None
+    if cat is None and en_venta and en_venta.get("tienda") == "Rocket League":
+        # artículo visto en la tienda: se busca en el catálogo por su dirección o su nombre
+        url = (en_venta.get("url") or "").replace(URL_CATALOGO_BASE, "")
+        fila = con.execute(f"SELECT {columnas} FROM catalogo WHERE id=? OR clave=? LIMIT 1",
+                           (url, origenes.slug(en_venta["nombre"]))).fetchone()
+        cat = dict(fila) if fila else None
+    return {
+        "imagen": (en_venta or {}).get("imagen") or (cat or {}).get("imagen") or "",
+        "mezcla": (en_venta or {}).get("mezcla") or "" if en_venta else "",
+        "titulo": (cat or {}).get("nombre_completo") or (cat or {}).get("nombre") or (en_venta or {}).get("nombre")
+        or al.get("nombre"),
+        "rareza": (cat or en_venta or {}).get("rareza") or "",
+        "rareza_color": (cat or en_venta or {}).get("rareza_color") or "",
+        "catalogo_id": (cat or {}).get("id", ""),
+    }
 
 
 def estado_api():
@@ -729,7 +752,8 @@ def estado_api():
         historial = [dict(f) for f in con.execute(
             "SELECT * FROM articulos WHERE en_tienda=0 AND imagen<>'' ORDER BY ultima_vez DESC")]
         for al in alertas:
-            al["imagen"], al["mezcla"] = imagen_alerta(con, al, articulos, historial)
+            al["articulo"] = articulo_alerta(con, al, articulos, historial)
+            al["imagen"], al["mezcla"] = al["articulo"]["imagen"], al["articulo"]["mezcla"]
     for al in alertas:
         al["coincidencias"] = sum(1 for a in articulos if al["id"] in a["alertas"])
         al["descripcion"] = describir_alerta(al)
