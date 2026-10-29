@@ -264,10 +264,75 @@ function vistaAlertas() {
   try { return localStorage.getItem("vistaAlertas") === "lista" ? "lista" : "tarjetas"; } catch (e) { return "tarjetas"; }
 }
 
+// Colores reales de las pinturas de RL (rl.source.gs/paints) y de las rarezas
+const COLORES_PINTURA = {
+  "titanium white": "#e7e7e7", "black": "#3f3f3f", "crimson": "#cb0000", "orange": "#ff9500",
+  "sky blue": "#27bce7", "cobalt": "#507cff", "burnt sienna": "#954b00", "forest green": "#00bc00",
+  "purple": "#8900bc", "pink": "#e77ccb", "lime": "#bcff00", "saffron": "#e1e100", "grey": "#898989",
+  "gray": "#898989", "gold": "#e8c476", "rose": "#ff6ea3", "white": "#ffffff",
+};
+const COLORES_RAREZA = {
+  "common": "#b8bcc4", "uncommon": "#7fc4f5", "rare": "#4c8cff", "very rare": "#9b5cf0", "import": "#e0413e",
+  "exotic": "#ffd24a", "black market": "#d63cff", "limited": "#f08d3a", "premium": "#38d39f", "legacy": "#9aa3b2",
+};
+
+function colorPintura(texto) {
+  const t = norm(texto).trim();
+  if (!t) return "";
+  if (COLORES_PINTURA[t]) return COLORES_PINTURA[t];
+  const clave = Object.keys(COLORES_PINTURA).find((k) => k.startsWith(t) || t.startsWith(k));
+  return clave ? COLORES_PINTURA[clave] : "";
+}
+
+function textoLegible(hex) {
+  const m = /^#?([0-9a-f]{6})$/i.exec(hex || "");
+  if (!m) return "#fff";
+  const n = parseInt(m[1], 16), c = [n >> 16, (n >> 8) & 255, n & 255].map((v) => {
+    v /= 255;
+    return v <= 0.03928 ? v / 12.92 : ((v + 0.055) / 1.055) ** 2.4;
+  });
+  return 0.2126 * c[0] + 0.7152 * c[1] + 0.0722 * c[2] > 0.35 ? "#111" : "#fff";
+}
+
+function tag(texto, clase = "", fondo = "") {
+  const estilo = fondo ? ` style="background:${fondo};color:${textoLegible(fondo)};border-color:${fondo}"` : "";
+  return `<span class="tag ${clase}"${estilo}>${esc(texto)}</span>`;
+}
+
+function tagsAlerta(al) {
+  const t = [];
+  const pintura = colorPintura(al.color);
+  t.push(al.color ? tag(al.color, "", pintura || "") : tag("Cualquier pintura", "tag-arcoiris"));
+  const rar = COLORES_RAREZA[norm(al.rareza).trim()];
+  t.push(al.rareza ? tag(al.rareza, "", rar || "") : tag("Cualquier rareza", "tag-neutro"));
+  t.push(al.tienda === "Rocket League" ? tag("Rocket League", "tag-rl")
+    : al.tienda === "Fortnite" ? tag("RL en Fortnite", "tag-fn") : tag("Ambas tiendas", "tag-ambas"));
+  if (al.tipo) t.push(tag(al.tipo, "tag-gris"));
+  if (al.precio_max != null) t.push(tag(`Hasta ${Number(al.precio_max).toLocaleString("es")}`, "tag-neutro"));
+  if (al.nombre && al.exacto) t.push(tag("Nombre exacto", "tag-neutro"));
+  else if (al.nombre) t.push(tag(`Contiene "${al.nombre}"`, "tag-neutro"));
+  return t.join("");
+}
+
 function imagenAlerta(al) {
   const img = urlSegura(al.imagen);
   return img ? `<img src="${esc(img)}" alt="" loading="lazy" referrerpolicy="no-referrer" class="${al.mezcla === "screen" ? "mezcla-screen" : ""}">`
     : `<span class="generico" title="Sin imagen">🔔</span>`;
+}
+
+// Imagen y título abren la ficha del artículo (si la alerta apunta a uno del catálogo)
+function enlaceFicha(al, contenido, clase) {
+  const id = al.articulo && al.articulo.catalogo_id;
+  return id ? `<a href="#" class="${clase} enlace-ficha" data-ficha="${esc(id)}" title="Ver ficha">${contenido}</a>`
+    : `<div class="${clase}">${contenido}</div>`;
+}
+
+function cabeceraAlerta(al) {
+  const art = al.articulo || {};
+  const color = colorSeguro(art.rareza_color) || COLORES_RAREZA[norm(art.rareza)] || "";
+  return `${enlaceFicha(al, esc(art.titulo || al.nombre || "Alerta"), "alerta-titulo")}
+    ${art.rareza ? `<span class="alerta-rareza" style="color:${color || "var(--sutil)"}">${esc(art.rareza)}</span>` : ""}
+    <div class="tags">${tagsAlerta(al)}</div>`;
 }
 
 function pintarAlertas() {
@@ -283,16 +348,17 @@ function pintarAlertas() {
     lista.innerHTML = `<li class="sutil">Todavía no tienes alertas.</li>`;
     return;
   }
+  const rareza = (al) => colorSeguro(al.articulo && al.articulo.rareza_color) || "#2a3245";
   lista.innerHTML = alertas.map((al) => vista === "tarjetas" ? `
-    <li class="${al.activa ? "" : "inactiva"} ${al.coincidencias ? "coincide" : ""}">
-      <div class="alerta-img">${imagenAlerta(al)}</div>
-      <div class="alerta-cuerpo"><div class="desc">${esc(al.descripcion)}</div>${coinc(al)}</div>
+    <li class="${al.activa ? "" : "inactiva"} ${al.coincidencias ? "coincide" : ""}" style="--rareza:${rareza(al)}">
+      ${enlaceFicha(al, imagenAlerta(al), "alerta-img")}
+      <div class="alerta-cuerpo">${cabeceraAlerta(al)}${coinc(al)}</div>
       <div class="alerta-botones">${activa(al)}${botones(al)}</div>
     </li>` : `
-    <li class="${al.activa ? "" : "inactiva"}">
+    <li class="${al.activa ? "" : "inactiva"} ${al.coincidencias ? "coincide" : ""}" style="--rareza:${rareza(al)}">
       ${activa(al)}
-      <div class="mini">${imagenAlerta(al)}</div>
-      <div class="desc">${esc(al.descripcion)}<br>${coinc(al)}</div>
+      ${enlaceFicha(al, imagenAlerta(al), "mini")}
+      <div class="desc">${cabeceraAlerta(al)}${coinc(al)}</div>
       ${botones(al)}
     </li>`).join("");
 }
@@ -619,7 +685,10 @@ function cerrarFicha() {
 
 document.addEventListener("click", (ev) => {
   const abrir = ev.target.closest("[data-ficha]");
-  if (abrir) return abrirFicha(abrir.dataset.ficha);
+  if (abrir) {
+    ev.preventDefault();
+    return abrirFicha(abrir.dataset.ficha);
+  }
   if (ev.target.closest("[data-cerrar-ficha]") || ev.target === $("#ficha-fondo")) return cerrarFicha();
   if (ev.target.closest("[data-crear-alerta-ficha]") && estado.fichaActual) {
     const a = estado.fichaActual;

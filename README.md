@@ -36,8 +36,11 @@ En la página:
   completes tiene que coincidir. La categoría distingue, por ejemplo, las ruedas Dodge Viper GTS-R de la
   carrocería del mismo nombre, y vale igual para la tienda de RL, la de Fortnite y el catálogo.
   Por defecto una alerta vale para **ambas tiendas** (Rocket League y Rocket League en Fortnite).
-  Cada alerta muestra la imagen del artículo (de la tienda, el historial o el catálogo) y se pueden ver
-  como **tarjetas** o como **lista**; la página recuerda la elección.
+  Cada alerta muestra la imagen, el nombre y la rareza del artículo (de la tienda, el historial o el
+  catálogo) y sus condiciones como etiquetas de colores: la pintura con su color real (o arcoíris si es
+  cualquiera), la rareza con su color, la tienda (azul RL, violeta Fortnite, ambas en degradé), la
+  categoría, el precio máximo y si el nombre es exacto. Clic en la imagen o el nombre abre la ficha del
+  artículo. Se pueden ver como **tarjetas** o como **lista**; la página recuerda la elección.
   El botón **+ Alerta** de cada tarjeta la crea ya rellenada. Con **Nombre exacto**, "Ruinator" no
   coincide con "Ruinator: Inverted".
 - **Revisar ahora**: revisa la tienda en el momento.
