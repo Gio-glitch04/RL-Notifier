@@ -327,11 +327,20 @@ function enlaceFicha(al, contenido, clase) {
     : `<div class="${clase}">${contenido}</div>`;
 }
 
-function cabeceraAlerta(al) {
+function colorRareza(al) {
   const art = al.articulo || {};
-  const color = colorSeguro(art.rareza_color) || COLORES_RAREZA[norm(art.rareza)] || "";
-  return `${enlaceFicha(al, esc(art.titulo || al.nombre || "Alerta"), "alerta-titulo")}
-    ${art.rareza ? `<span class="alerta-rareza" style="color:${color || "var(--sutil)"}">${esc(art.rareza)}</span>` : ""}
+  return colorSeguro(art.rareza_color) || COLORES_RAREZA[norm(art.rareza)] || "#8a94a8";
+}
+
+// La rareza va como insignia (igual que en las tarjetas de la tienda), no como texto bajo el título
+function insigniaRareza(al) {
+  const art = al.articulo || {};
+  return art.rareza ? `<span class="etiqueta rareza">${esc(art.rareza)}</span>` : "";
+}
+
+function cabeceraAlerta(al, conInsignia = false) {
+  const art = al.articulo || {};
+  return `<div class="alerta-linea">${conInsignia ? insigniaRareza(al) : ""}${enlaceFicha(al, esc(art.titulo || al.nombre || "Alerta"), "alerta-titulo")}</div>
     <div class="tags">${tagsAlerta(al)}</div>`;
 }
 
@@ -348,17 +357,21 @@ function pintarAlertas() {
     lista.innerHTML = `<li class="sutil">Todavía no tienes alertas.</li>`;
     return;
   }
-  const rareza = (al) => colorSeguro(al.articulo && al.articulo.rareza_color) || "#2a3245";
+  // Tarjetas: las mismas clases que las tarjetas de la tienda (tarjeta, tarjeta-img, etiquetas, franja, con-alerta)
   lista.innerHTML = alertas.map((al) => vista === "tarjetas" ? `
-    <li class="${al.activa ? "" : "inactiva"} ${al.coincidencias ? "coincide" : ""}" style="--rareza:${rareza(al)}">
-      ${enlaceFicha(al, imagenAlerta(al), "alerta-img")}
-      <div class="alerta-cuerpo">${cabeceraAlerta(al)}${coinc(al)}</div>
-      <div class="alerta-botones">${activa(al)}${botones(al)}</div>
+    <li class="${al.activa ? "" : "inactiva"}">
+      <article class="tarjeta ${al.coincidencias ? "con-alerta" : ""}" style="--rareza:${colorRareza(al)}">
+        ${enlaceFicha(al, `${imagenAlerta(al)}
+          <div class="etiquetas"><span>${insigniaRareza(al)}</span><span></span></div>`, "tarjeta-img")}
+        <div class="franja"></div>
+        <div class="cuerpo">${cabeceraAlerta(al)}${coinc(al)}</div>
+        <div class="alerta-botones">${activa(al)}${botones(al)}</div>
+      </article>
     </li>` : `
-    <li class="${al.activa ? "" : "inactiva"} ${al.coincidencias ? "coincide" : ""}" style="--rareza:${rareza(al)}">
+    <li class="${al.activa ? "" : "inactiva"} ${al.coincidencias ? "coincide" : ""}" style="--rareza:${colorRareza(al)}">
       ${activa(al)}
       ${enlaceFicha(al, imagenAlerta(al), "mini")}
-      <div class="desc">${cabeceraAlerta(al)}${coinc(al)}</div>
+      <div class="desc">${cabeceraAlerta(al, true)}${coinc(al)}</div>
       ${botones(al)}
     </li>`).join("");
 }

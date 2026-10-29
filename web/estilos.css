@@ -159,7 +159,10 @@ main { padding: 0 24px 40px; }
 .lista-alertas.tarjetas { display: grid; grid-template-columns: repeat(auto-fill, minmax(190px, 1fr)); gap: 12px; }
 .lista-alertas.tarjetas li { flex-direction: column; align-items: stretch; padding: 0; overflow: hidden;
   border: 1px solid var(--borde); }
-.lista-alertas.tarjetas li.coincide { border-color: var(--alerta); box-shadow: 0 0 0 1px var(--alerta); }
+/* en tarjetas, el <li> solo envuelve una .tarjeta como las de la tienda */
+.lista-alertas.tarjetas li { display: block; padding: 0; background: none; border: 0; border-radius: 12px; }
+.lista-alertas.tarjetas .tarjeta { height: 100%; }
+.lista-alertas.tarjetas .tarjeta-img .generico { font-size: 44px; }
 .alerta-img { aspect-ratio: 4 / 3; display: grid; place-items: center; padding: 10px;
   background: radial-gradient(75% 75% at 50% 55%, rgb(255 255 255 / .06), transparent), #11151f; }
 .alerta-img .generico { font-size: 44px; }
@@ -172,7 +175,6 @@ a.alerta-img:hover img, a.mini:hover img { transform: scale(1.04); }
 .alerta-img img, .mini img { transition: transform .15s; }
 .alerta-titulo { display: block; font-weight: 700; font-size: 15px; line-height: 1.25; }
 a.alerta-titulo:hover { text-decoration: underline; }
-.alerta-rareza { font-size: 11px; font-weight: 700; text-transform: uppercase; letter-spacing: .4px; }
 .tags { display: flex; flex-wrap: wrap; gap: 5px; margin-top: 6px; }
 .tag { font-size: 11px; font-weight: 600; padding: 2px 8px; border-radius: 99px; border: 1px solid var(--borde);
   background: var(--panel); color: var(--texto); white-space: nowrap; }
@@ -184,7 +186,15 @@ a.alerta-titulo:hover { text-decoration: underline; }
 .tag-arcoiris { background: linear-gradient(90deg, #cb0000, #ff9500, #e1e100, #00bc00, #27bce7, #507cff, #8900bc);
   color: #fff; border-color: transparent; text-shadow: 0 1px 2px rgb(0 0 0 / .8); }
 .lista-alertas li .desc { display: flex; flex-direction: column; gap: 2px; }
-.lista-alertas:not(.tarjetas) li.coincide { box-shadow: inset 3px 0 0 var(--alerta); }
+/* lista compacta: borde y acento del color de la rareza, insignia pequeña junto al título */
+.lista-alertas:not(.tarjetas) li { border: 1px solid color-mix(in srgb, var(--rareza) 35%, var(--borde));
+  border-left: 3px solid var(--rareza); }
+.lista-alertas:not(.tarjetas) li.coincide { border-color: var(--alerta); border-left-color: var(--rareza);
+  box-shadow: 0 0 0 1px var(--alerta), 0 0 12px rgb(255 204 51 / .2); }
+.lista-alertas:not(.tarjetas) .mini {
+  background: radial-gradient(75% 75% at 50% 55%, color-mix(in srgb, var(--rareza) 35%, transparent), transparent), #11151f; }
+.alerta-linea { display: flex; align-items: center; gap: 8px; flex-wrap: wrap; }
+.alerta-linea .etiqueta.rareza { font-size: 9px; padding: 1px 6px; }
 .coinc { font-size: 12px; color: var(--sutil); }
 .coinc.si { color: var(--alerta); }
 
