@@ -108,7 +108,8 @@ def guardar_json(ruta, datos):
 
 def cargar_config():
     if not ARCHIVO_CONFIG.exists():
-        guardar_json(ARCHIVO_CONFIG, CONFIG_INICIAL)
+        ejemplo = CARPETA / "config.ejemplo.json"  # el que viene en el repo, sin datos privados
+        guardar_json(ARCHIVO_CONFIG, leer_json(ejemplo, CONFIG_INICIAL) if ejemplo.exists() else CONFIG_INICIAL)
         print(f"Creé {ARCHIVO_CONFIG.name}: edítalo para cambiar tu lista de deseos.")
     guardado = leer_json(ARCHIVO_CONFIG, {})
     config = dict(CONFIG_INICIAL)

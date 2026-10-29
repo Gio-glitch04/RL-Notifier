@@ -59,6 +59,6 @@ Los secretos van **solo** en `config.json`. Después de cambiarlo no hace falta 
 - `rl_tienda.py`: lectura de las tiendas (itemshop.gg con RL Portal de respaldo, y fortnite-api.com).
   Sigue funcionando solo, en consola: `python rl_tienda.py --listar`, `--una-vez`, `--probar`.
 - `tienda.db`: base de datos (se crea sola). Bórrala para empezar de cero.
-- `config.json`: configuración (no se sube a git porque guarda el webhook y el correo; si falta, se crea solo.
-  `config.ejemplo.json` muestra las opciones). La `lista_de_deseos` se importó como alertas la primera vez;
+- `config.json`: configuración (no se sube a git porque guarda el webhook y el correo; si falta, se crea
+  copiando `config.ejemplo.json`, que es la plantilla sin datos privados). La `lista_de_deseos` se importó como alertas la primera vez;
   desde entonces las alertas se manejan en la página.
