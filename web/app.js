@@ -329,15 +329,42 @@ $("#form-alerta").addEventListener("submit", async (ev) => {
     if (f.id.value) await api(`/api/alertas/${f.id.value}`, "PUT", cuerpo);
     else await api("/api/alertas", "POST", cuerpo);
     mostrarAviso(f.id.value ? "Alerta actualizada" : "Alerta creada. Se avisará en la próxima revisión.");
-    llenarFormulario(null);
+    const flotante = !$("#alerta-fondo").hidden;
+    cerrarFormularioFlotante();
     await cargar();
+    if (flotante && estado.vista === "catalogo") await cargarCatalogo(false, true); // marca ★ sin perder el lugar
   } catch (e) {
     $("#form-error").textContent = e.message;
     $("#form-error").hidden = false;
   }
 });
 
-$("#btn-cancelar").addEventListener("click", () => llenarFormulario(null));
+$("#btn-cancelar").addEventListener("click", () => cerrarFormularioFlotante());
+
+// El formulario de alertas se "presta" a una ventana cuando se usa "+ Alerta" desde una tarjeta:
+// así la página de atrás (catálogo, tienda…) no cambia ni pierde su lugar.
+const lugarFormulario = { padre: $("#form-alerta").parentNode, siguiente: $("#form-alerta").nextSibling };
+
+function abrirFormularioFlotante(datos) {
+  $("#alerta-modal").appendChild($("#form-alerta"));
+  $("#alerta-fondo").hidden = false;
+  llenarFormulario(datos);
+  $("#btn-cancelar").hidden = false;
+  const f = $("#form-alerta");
+  (datos.color ? f.querySelector("button[type=submit]") : f.color).focus({ preventScroll: true });
+}
+
+function cerrarFormularioFlotante() {
+  llenarFormulario(null);
+  if ($("#alerta-fondo").hidden) return;
+  const scroll = window.scrollY;
+  lugarFormulario.padre.insertBefore($("#form-alerta"), lugarFormulario.siguiente);
+  $("#alerta-fondo").hidden = true;
+  window.scrollTo(0, scroll);
+}
+
+$("#alerta-fondo").addEventListener("click", (ev) => { if (ev.target === $("#alerta-fondo")) cerrarFormularioFlotante(); });
+document.addEventListener("keydown", (ev) => { if (ev.key === "Escape" && !$("#alerta-fondo").hidden) cerrarFormularioFlotante(); });
 
 document.addEventListener("click", async (ev) => {
   const t = ev.target.closest("[data-editar],[data-borrar],[data-crear-alerta],[data-activar]");
@@ -359,22 +386,24 @@ document.addEventListener("click", async (ev) => {
       || (estado.historial || []).find((x) => x.id === t.dataset.crearAlerta)
       || (estado.catalogo ? estado.catalogo.articulos : []).find((x) => x.id === t.dataset.crearAlerta);
     if (!a) return;
-    cambiarVista("alertas");
     // Alerta exacta por nombre; el color queda para completar si se quiere uno concreto
-    llenarFormulario({ nombre: a.nombre_completo || a.nombre, color: a.color || "", tienda: "", // ambas tiendas
+    abrirFormularioFlotante({ nombre: a.nombre_completo || a.nombre, color: a.color || "", tienda: "", // ambas tiendas
       tipo: a.categoria || "", exacto: 1 });
-    if (!a.color) $("#form-alerta").color.focus();
   }
 });
 
 // ---------- botones y pestañas ----------
 function cambiarVista(vista) {
+  if (estado.vista === "catalogo") estado.scrollCatalogo = window.scrollY;
   estado.vista = vista;
   document.querySelectorAll(".pestana").forEach((p) => p.classList.toggle("activa", p.dataset.vista === vista));
   if (vista === "historial") estado.historial = null; // se vuelve a pedir para tenerlo al día
-  if (vista === "catalogo") estado.catalogo = null; // se vuelve a pedir (historial y alertas al día)
   if (vista !== "alertas" && vista !== "catalogo") llenarFiltros();
   pintar();
+  if (vista === "catalogo" && estado.catalogo) {
+    pintarCatalogo(); // se muestra lo que había, en el mismo lugar…
+    cargarCatalogo(false, true); // …y se actualiza (alertas, tienda de hoy) sin perder el lugar
+  }
 }
 
 document.querySelectorAll(".pestana").forEach((p) => p.addEventListener("click", () => cambiarVista(p.dataset.vista)));
@@ -408,12 +437,16 @@ $("#btn-probar").addEventListener("click", async () => {
 });
 
 // ---------- catálogo ----------
-async function cargarCatalogo(mas = false) {
+async function cargarCatalogo(mas = false, conservar = false) {
   const pagina = mas && estado.catalogo ? estado.catalogo.pagina + 1 : 0;
   const params = new URLSearchParams({
     q: $("#c-buscar").value.trim(), tipo: $("#c-tipo").value, rareza: $("#c-rareza").value,
-    vista: $("#c-vista").value, origen: $("#c-origen").value, pase: $("#c-pase").value, pagina,
+    vista: $("#c-vista").value, origen: $("#c-origen").value, pase: $("#c-pase").value,
+    orden: $("#c-orden").value, pagina,
   });
+  // Conservar: se vuelven a pedir los mismos artículos que había y se deja el scroll donde estaba
+  const scroll = window.scrollY;
+  if (conservar && estado.catalogo) params.set("cantidad", Math.max(estado.catalogo.articulos.length, 1));
   const pedido = (cargarCatalogo.n = (cargarCatalogo.n || 0) + 1);
   let datos;
   try {
@@ -425,6 +458,7 @@ async function cargarCatalogo(mas = false) {
   if (pedido !== cargarCatalogo.n) return; // llegó una búsqueda más nueva
   if (mas && estado.catalogo) datos.articulos = estado.catalogo.articulos.concat(datos.articulos);
   estado.catalogo = datos;
+  if (conservar) estado.scrollCatalogo = scroll;
   for (const [id, valores, fijas] of [["#c-tipo", datos.tipos, 1], ["#c-rareza", datos.rarezas, 1],
     ["#c-origen", datos.origenes, 2], ["#c-pase", datos.pases, 1]]) {
     const sel = $(id), actual = sel.value;
@@ -484,6 +518,10 @@ function pintarCatalogo() {
   $("#c-rejilla").innerHTML = c.articulos.length ? c.articulos.map(tarjetaCatalogo).join("")
     : `<div class="vacio">${c.total_catalogo ? "Nada con estos filtros." : ""}</div>`;
   $("#c-mas").hidden = c.articulos.length >= c.total;
+  if (estado.scrollCatalogo != null && estado.vista === "catalogo") {
+    window.scrollTo(0, estado.scrollCatalogo);
+    estado.scrollCatalogo = null;
+  }
 }
 
 $("#c-buscar").addEventListener("input", () => {
@@ -491,6 +529,11 @@ $("#c-buscar").addEventListener("input", () => {
   cargarCatalogo.espera = setTimeout(() => cargarCatalogo(), 250);
 });
 for (const id of ["#c-tipo", "#c-rareza", "#c-vista", "#c-origen", "#c-pase"]) $(id).addEventListener("input", () => cargarCatalogo());
+try { $("#c-orden").value = localStorage.getItem("ordenCatalogo") || ""; } catch (e) { /* sin almacenamiento */ }
+$("#c-orden").addEventListener("input", () => {
+  try { localStorage.setItem("ordenCatalogo", $("#c-orden").value); } catch (e) { /* solo esta vez */ }
+  cargarCatalogo();
+});
 
 // ---------- origen y ficha ----------
 function fechaDia(iso) {
@@ -581,9 +624,7 @@ document.addEventListener("click", (ev) => {
   if (ev.target.closest("[data-crear-alerta-ficha]") && estado.fichaActual) {
     const a = estado.fichaActual;
     cerrarFicha();
-    cambiarVista("alertas");
-    llenarFormulario({ nombre: a.nombre_completo || a.nombre, tienda: "", tipo: a.categoria || "", exacto: 1 });
-    $("#form-alerta").color.focus();
+    abrirFormularioFlotante({ nombre: a.nombre_completo || a.nombre, tienda: "", tipo: a.categoria || "", exacto: 1 });
   }
 });
 document.addEventListener("keydown", (ev) => { if (ev.key === "Escape" && !$("#ficha-fondo").hidden) cerrarFicha(); });

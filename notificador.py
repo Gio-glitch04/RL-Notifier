@@ -86,6 +86,10 @@ SINONIMOS_CATEGORIA = {
     "borde de avatar": "Borde de avatar", "blueprint": "Plano", "plano": "Plano", "crate": "Caja", "caja": "Caja",
     "lote": "Lote", "bundle": "Lote",
 }
+# Orden real de rarezas de RL. Las especiales (Limited, Premium, Legacy) van siempre detrás.
+ESCALA_RAREZAS = ["Common", "Uncommon", "Rare", "Very Rare", "Import", "Exotic", "Black Market"]
+RAREZAS_ESPECIALES = ["Limited", "Premium", "Legacy"]
+ORDENES_CATALOGO = ("nombre-asc", "nombre-desc", "rareza-asc", "rareza-desc", "precio-asc", "precio-desc")
 DIAS_ENTRE_CATALOGOS = 7
 HORAS_ENTRE_HISTORIALES = 20  # resumen de itemshop.gg: 1 pedido por día
 HORAS_CACHE_FICHA = 12  # historial detallado de un artículo (al abrir su ficha)
@@ -812,10 +816,39 @@ def completar(f, origen, externo, vistos, reciente):
     return f
 
 
+def ordenar_catalogo(filas, orden):
+    """Ordena por nombre, rareza o último precio conocido. Sin precio (o rareza rara) siempre al final."""
+    if not orden:
+        return filas
+    campo, sentido = orden.split("-")
+    nombre = lambda f: normalizar(f.get("nombre_completo") or f["nombre"])
+    filas = sorted(filas, key=nombre)  # desempate estable: por nombre
+    if campo == "nombre":
+        return sorted(filas, key=nombre, reverse=sentido == "desc")
+    if campo == "rareza":
+        def puesto(f):
+            r = f.get("rareza") or ""
+            if r in ESCALA_RAREZAS:
+                n = ESCALA_RAREZAS.index(r)
+                return (0, -n if sentido == "desc" else n)
+            if r in RAREZAS_ESPECIALES:
+                return (1, RAREZAS_ESPECIALES.index(r))
+            return (2, 0)
+        return sorted(filas, key=puesto)
+    con_precio = [f for f in filas if f.get("ultimo_precio") is not None]
+    sin_precio = [f for f in filas if f.get("ultimo_precio") is None]
+    return sorted(con_precio, key=lambda f: f["ultimo_precio"], reverse=sentido == "desc") + sin_precio
+
+
 def catalogo_api(consulta):
     arg = lambda k: consulta.get(k, [""])[0]
     q = normalizar(arg("q")).strip()
     tipo, rareza, vista, filtro_origen, pase = arg("tipo"), arg("rareza"), arg("vista"), arg("origen"), arg("pase")
+    orden = arg("orden") if arg("orden") in ORDENES_CATALOGO else ""
+    try:  # "cantidad": volver a pedir lo que ya estaba cargado (para no perder el lugar en la lista)
+        cantidad = min(3000, max(0, int(arg("cantidad") or 0)))
+    except ValueError:
+        cantidad = 0
     try:
         pagina = max(0, int(arg("pagina") or 0))
     except ValueError:
@@ -867,8 +900,13 @@ def catalogo_api(consulta):
         filas = [f for f in filas if f["en_tienda"]]
     elif vista == "alerta":
         filas = [f for f in filas if alertas_de(f)]
+    filas = ordenar_catalogo(filas, orden)
     total = len(filas)
-    filas = filas[pagina * por_pagina:(pagina + 1) * por_pagina]
+    if cantidad:
+        filas = filas[:cantidad]
+        pagina = max(0, (len(filas) - 1) // por_pagina)
+    else:
+        filas = filas[pagina * por_pagina:(pagina + 1) * por_pagina]
     for f in filas:
         f["alertas"] = alertas_de(f)
         f.pop("nombre_norm", None)

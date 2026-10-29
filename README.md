@@ -26,6 +26,10 @@ En la página:
   Clic en la imagen o el nombre abre la **ficha**: colores vistos, cada paso por la tienda (fecha, precio,
   sección) y lo que registró este notificador. **+ Alerta** crea una alerta por nombre exacto (puedes agregar un color).
   Filtros por tipo, rareza, origen, Rocket Pass y "Nunca vistos en la tienda".
+  Orden por nombre (A-Z / Z-A), rareza (de Common a Black Market o al revés; Limited, Premium y Legacy
+  siempre al final) o precio (último precio conocido en la tienda; los que no tienen precio, al final).
+  La página recuerda el orden. "+ Alerta" abre el formulario en una ventana: al guardar o cancelar, el
+  catálogo queda en el mismo lugar, con los mismos artículos cargados.
 - **Historial**: todo lo que se vio alguna vez, con primera y última vez y cuántas veces volvió.
 - **Alertas**: crea, edita, desactiva o borra alertas (sin límite). Cada alerta puede filtrar por nombre,
   color, categoría (Ruedas, Carrocería, Calcomanía…), rareza, tienda y precio máximo; todo lo que

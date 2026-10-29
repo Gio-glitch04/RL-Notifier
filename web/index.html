@@ -67,6 +67,15 @@
           <option value="desconocido">Origen desconocido</option>
         </select>
         <select id="c-pase"><option value="">Todos los Rocket Pass</option></select>
+        <select id="c-orden" title="Orden">
+          <option value="">Orden: relevancia</option>
+          <option value="nombre-asc">Nombre (A-Z)</option>
+          <option value="nombre-desc">Nombre (Z-A)</option>
+          <option value="rareza-asc">Rareza: de Common a Black Market</option>
+          <option value="rareza-desc">Rareza: de Black Market a Common</option>
+          <option value="precio-asc">Precio: menor a mayor</option>
+          <option value="precio-desc">Precio: mayor a menor</option>
+        </select>
         <select id="c-vista">
           <option value="">Todos</option>
           <option value="nunca">Nunca vistos en la tienda</option>
@@ -120,6 +129,10 @@
       </div>
     </div>
   </main>
+
+  <div id="alerta-fondo" class="ficha-fondo" hidden>
+    <div id="alerta-modal" class="ficha modal-alerta" role="dialog" aria-modal="true" aria-label="Nueva alerta"></div>
+  </div>
 
   <div id="ficha-fondo" class="ficha-fondo" hidden>
     <article id="ficha" class="ficha" role="dialog" aria-modal="true" aria-labelledby="ficha-nombre"></article>
