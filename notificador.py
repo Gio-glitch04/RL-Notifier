@@ -69,6 +69,23 @@ RAREZAS_CATALOGO = {
     "BlackMarket": ("Black Market", "#d63cff"), "Limited": ("Limited", "#f08d3a"),
     "Premium": ("Premium", "#38d39f"), "Legacy": ("Legacy", "#9aa3b2"),
 }
+# Categoría común para los tipos de itemshop.gg, RL Portal, Fortnite y el catálogo
+# (así una alerta de "Ruedas" no confunde las ruedas Dodge Viper GTS-R con la carrocería del mismo nombre)
+CATEGORIAS = ["Carrocería", "Ruedas", "Calcomanía", "Explosión de gol", "Propulsor", "Estela", "Sombrero",
+              "Antena", "Sonido de motor", "Acabado de pintura", "Himno", "Estandarte", "Borde de avatar",
+              "Plano", "Caja", "Lote"]
+SINONIMOS_CATEGORIA = {
+    "body": "Carrocería", "bodies": "Carrocería", "car": "Carrocería", "vehicle": "Carrocería",
+    "carroceria": "Carrocería", "wheel": "Ruedas", "wheels": "Ruedas", "rueda": "Ruedas", "ruedas": "Ruedas",
+    "calcomania": "Calcomanía", "goal explosion": "Explosión de gol", "explosion de gol": "Explosión de gol",
+    "rocket boost": "Propulsor", "boost": "Propulsor", "propulsor": "Propulsor", "trail": "Estela",
+    "estela": "Estela", "rastro": "Estela", "topper": "Sombrero", "sombrero": "Sombrero", "antenna": "Antena",
+    "antena": "Antena", "engine audio": "Sonido de motor", "sonido de motor": "Sonido de motor",
+    "paint finish": "Acabado de pintura", "acabado de pintura": "Acabado de pintura", "player anthem": "Himno",
+    "himno": "Himno", "player banner": "Estandarte", "estandarte": "Estandarte", "avatar border": "Borde de avatar",
+    "borde de avatar": "Borde de avatar", "blueprint": "Plano", "plano": "Plano", "crate": "Caja", "caja": "Caja",
+    "lote": "Lote", "bundle": "Lote",
+}
 DIAS_ENTRE_CATALOGOS = 7
 HORAS_ENTRE_HISTORIALES = 20  # resumen de itemshop.gg: 1 pedido por día
 HORAS_CACHE_FICHA = 12  # historial detallado de un artículo (al abrir su ficha)
@@ -92,6 +109,18 @@ def fecha(iso):
 def normalizar(s):
     s = unicodedata.normalize("NFD", str(s or "").lower())
     return "".join(c for c in s if unicodedata.category(c) != "Mn")
+
+
+def categoria_de(tipo):
+    """'Wheels', 'Ruedas', 'WHEEL BUNDLE'... -> categoría común ('Ruedas', 'Lote'). '' si no se reconoce."""
+    t = normalizar(tipo).strip()
+    if not t:
+        return ""
+    if "bundle" in t or t.startswith("lote") or "," in t:
+        return "Lote"
+    if "decal" in t or "calcomania" in t:
+        return "Calcomanía"
+    return SINONIMOS_CATEGORIA.get(t, "")
 
 
 # ---------- base de datos ----------
@@ -156,6 +185,9 @@ def iniciar_db(config):
                 con.execute(f"ALTER TABLE articulos ADD COLUMN {col} {tipo}")
         if "exacto" not in {f["name"] for f in con.execute("PRAGMA table_info(alertas)")}:
             con.execute("ALTER TABLE alertas ADD COLUMN exacto INTEGER DEFAULT 0")
+        for f in con.execute("SELECT id, tipo FROM alertas WHERE tipo<>''").fetchall():
+            if categoria_de(f["tipo"]) and categoria_de(f["tipo"]) != f["tipo"]:
+                con.execute("UPDATE alertas SET tipo=? WHERE id=?", (categoria_de(f["tipo"]), f["id"]))
         columnas = {f["name"] for f in con.execute("PRAGMA table_info(catalogo)")}
         for col in ("nombre_completo", "clave"):
             if col not in columnas:
@@ -181,7 +213,10 @@ def coincide(alerta, a):
         if buscado:
             hay_criterio = True
             valor = normalizar(a.get(campo)).strip()
-            if campo == "nombre" and alerta.get("exacto"):
+            if campo == "tipo" and categoria_de(alerta[campo]):
+                if categoria_de(alerta[campo]) != categoria_de(a.get("tipo")):
+                    return False
+            elif campo == "nombre" and alerta.get("exacto"):
                 if buscado != valor:  # "Ruinator" no coincide con "Ruinator: Inverted"
                     return False
             elif buscado not in valor:
@@ -663,6 +698,7 @@ def estado_api():
         primera = meta(con, "primera_revision") or ""
     limite_nuevo = iso(datetime.now(timezone.utc) - timedelta(hours=24))
     for a in articulos:
+        a["categoria"] = categoria_de(a["tipo"])
         a["alertas"] = [al["id"] for al in alertas if al["activa"] and coincide(al, a)]
         a["nuevo"] = a["aparicion"] > primera and a["aparicion"] >= limite_nuevo
     for al in alertas:
@@ -672,6 +708,7 @@ def estado_api():
     return {
         "articulos": articulos,
         "alertas": alertas,
+        "categorias": CATEGORIAS,
         "revision": {
             "revisando": Estado.revisando, "ultima": Estado.ultima, "resumen": Estado.resumen,
             "errores": Estado.errores, "proxima_periodica": iso(Estado.proxima_periodica),
@@ -746,6 +783,7 @@ def completar(f, origen, externo, vistos, reciente):
     if v:
         f["pinturas"] = sorted(set(f["pinturas"]) | {r["color"] for r in v["filas"] if r["color"]})
     f["slug_itemshop"] = (ext or {}).get("slug") or ""
+    f["categoria"] = categoria_de(f["tipo"])
     return f
 
 
@@ -855,11 +893,15 @@ def ficha_api(consulta):
 
 def historial_api():
     with conectar() as con:
-        return [dict(f) for f in con.execute("SELECT * FROM articulos ORDER BY ultima_vez DESC, nombre")]
+        filas = [dict(f) for f in con.execute("SELECT * FROM articulos ORDER BY ultima_vez DESC, nombre")]
+    for f in filas:
+        f["categoria"] = categoria_de(f["tipo"])
+    return filas
 
 
 def limpiar_alerta(datos):
     alerta = {c: str(datos.get(c) or "").strip()[:100] for c in CAMPOS_TEXTO}
+    alerta["tipo"] = categoria_de(alerta["tipo"]) or alerta["tipo"]  # se guarda la categoría común
     alerta["tienda"] = datos.get("tienda") if datos.get("tienda") in TIENDAS else ""
     precio = datos.get("precio_max")
     try:

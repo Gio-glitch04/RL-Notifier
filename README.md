@@ -28,7 +28,9 @@ En la página:
   Filtros por tipo, rareza, origen, Rocket Pass y "Nunca vistos en la tienda".
 - **Historial**: todo lo que se vio alguna vez, con primera y última vez y cuántas veces volvió.
 - **Alertas**: crea, edita, desactiva o borra alertas (sin límite). Cada alerta puede filtrar por nombre,
-  color, tipo, rareza, tienda y precio máximo; todo lo que completes tiene que coincidir.
+  color, categoría (Ruedas, Carrocería, Calcomanía…), rareza, tienda y precio máximo; todo lo que
+  completes tiene que coincidir. La categoría distingue, por ejemplo, las ruedas Dodge Viper GTS-R de la
+  carrocería del mismo nombre, y vale igual para la tienda de RL, la de Fortnite y el catálogo.
   El botón **+ Alerta** de cada tarjeta la crea ya rellenada. Con **Nombre exacto**, "Ruinator" no
   coincide con "Ruinator: Inverted".
 - **Revisar ahora**: revisa la tienda en el momento.
@@ -78,5 +80,5 @@ salen como "desconocido". Los lotes de la tienda no figuran como origen.
   Sigue funcionando solo, en consola: `python rl_tienda.py --listar`, `--una-vez`, `--probar`.
 - `tienda.db`: base de datos (se crea sola). Bórrala para empezar de cero.
 - `config.json`: configuración (no se sube a git porque guarda el webhook y el correo; si falta, se crea
-  copiando `config.ejemplo.json`, que es la plantilla sin datos privados). La `lista_de_deseos` se importó como alertas la primera vez;
+  copiando `config.example.json`, que es la plantilla sin datos privados). La `lista_de_deseos` se importó como alertas la primera vez;
   desde entonces las alertas se manejan en la página.

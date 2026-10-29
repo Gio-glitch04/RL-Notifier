@@ -68,7 +68,15 @@ async function cargar() {
   cargar.t = setTimeout(cargar, estado.datos.revision.revisando ? 2000 : 60000);
 }
 
+function llenarCategorias() {
+  const sel = $("#form-alerta").tipo;
+  if (sel.dataset.listo || !estado.datos.categorias) return;
+  for (const c of estado.datos.categorias) sel.add(new Option(c, c));
+  sel.dataset.listo = "1";
+}
+
 function pintarCabecera() {
+  llenarCategorias();
   const r = estado.datos.revision;
   const partes = [];
   if (r.revisando) partes.push("Revisando la tienda…");
@@ -224,11 +232,11 @@ function pintarTienda() {
 
 async function pintarHistorial() {
   if (!estado.historial) {
-    $("#historial-cuerpo").innerHTML = `<tr><td colspan="9" class="vacio">Cargando…</td></tr>`;
+    $("#historial-cuerpo").innerHTML = `<tr><td colspan="10" class="vacio">Cargando…</td></tr>`;
     try {
       estado.historial = await api("/api/historial");
     } catch (e) {
-      $("#historial-cuerpo").innerHTML = `<tr><td colspan="9" class="vacio">${esc(e.message)}</td></tr>`;
+      $("#historial-cuerpo").innerHTML = `<tr><td colspan="10" class="vacio">${esc(e.message)}</td></tr>`;
       return;
     }
     llenarFiltros();
@@ -246,7 +254,8 @@ async function pintarHistorial() {
       <td>${esc(fechaCorta(a.primera_vez))}</td>
       <td>${esc(fechaCorta(a.ultima_vez))}</td>
       <td>${a.apariciones}</td>
-    </tr>`).join("") || `<tr><td colspan="9" class="vacio">Nada con estos filtros.</td></tr>`;
+      <td><button class="btn btn-chico" data-crear-alerta="${esc(a.id)}">+ Alerta</button></td>
+    </tr>`).join("") || `<tr><td colspan="10" class="vacio">Nada con estos filtros.</td></tr>`;
 }
 
 function pintarAlertas() {
@@ -265,6 +274,8 @@ function pintarAlertas() {
 function llenarFormulario(al) {
   const f = $("#form-alerta");
   f.id.value = al && al.id ? al.id : "";
+  const tipo = (al && al.tipo) || "";
+  if (tipo && ![...f.tipo.options].some((o) => o.value === tipo)) f.tipo.add(new Option(tipo, tipo)); // alerta vieja
   for (const c of ["nombre", "color", "tipo", "rareza", "tienda"]) f[c].value = (al && al[c]) || "";
   f.precio_max.value = al && al.precio_max != null ? al.precio_max : "";
   f.activa.checked = !al || al.activa === undefined ? true : !!al.activa;
@@ -317,7 +328,8 @@ document.addEventListener("click", async (ev) => {
     if (!a) return;
     cambiarVista("alertas");
     // Alerta exacta por nombre; el color queda para completar si se quiere uno concreto
-    llenarFormulario({ nombre: a.nombre_completo || a.nombre, color: a.color || "", tienda: a.tienda || "Rocket League", exacto: 1 });
+    llenarFormulario({ nombre: a.nombre_completo || a.nombre, color: a.color || "", tienda: a.tienda || "Rocket League",
+      tipo: a.categoria || "", exacto: 1 });
     if (!a.color) $("#form-alerta").color.focus();
   }
 });
@@ -537,7 +549,7 @@ document.addEventListener("click", (ev) => {
     const a = estado.fichaActual;
     cerrarFicha();
     cambiarVista("alertas");
-    llenarFormulario({ nombre: a.nombre_completo || a.nombre, tienda: "Rocket League", exacto: 1 });
+    llenarFormulario({ nombre: a.nombre_completo || a.nombre, tienda: "Rocket League", tipo: a.categoria || "", exacto: 1 });
     $("#form-alerta").color.focus();
   }
 });
