@@ -94,9 +94,9 @@
         <label>Rareza <input name="rareza" placeholder="Black Market, Exotic…"></label>
         <label>Tienda
           <select name="tienda">
-            <option value="">Cualquiera</option>
-            <option value="Rocket League">Rocket League</option>
-            <option value="Fortnite">Rocket League en Fortnite</option>
+            <option value="">Ambas (Rocket League y Fortnite)</option>
+            <option value="Rocket League">Solo Rocket League</option>
+            <option value="Fortnite">Solo Rocket League en Fortnite</option>
           </select>
         </label>
         <label>Precio máximo <input name="precio_max" type="number" min="0" step="1" placeholder="sin límite"></label>
@@ -109,7 +109,13 @@
         </div>
       </form>
       <div class="panel">
-        <h2>Tus alertas</h2>
+        <div class="alertas-cabecera">
+          <h2>Tus alertas</h2>
+          <div class="selector-vista" role="group" aria-label="Cómo ver las alertas">
+            <button type="button" class="btn btn-chico" data-vista-alertas="tarjetas">Tarjetas</button>
+            <button type="button" class="btn btn-chico" data-vista-alertas="lista">Lista</button>
+          </div>
+        </div>
         <ul id="lista-alertas" class="lista-alertas"></ul>
       </div>
     </div>

@@ -235,8 +235,7 @@ def coincide(alerta, a):
 def describir_alerta(al):
     partes = [f"{c}{' (exacto)' if c == 'nombre' and al.get('exacto') else ''}: {al[c]}"
               for c in CAMPOS_TEXTO if al.get(c)]
-    if al.get("tienda"):
-        partes.append(f"tienda: {al['tienda']}")
+    partes.append(f"tienda: {al['tienda']}" if al.get("tienda") else "tiendas: ambas")
     if al.get("precio_max") is not None:
         partes.append(f"precio ≤ {al['precio_max']}")
     return ", ".join(partes) or "(vacía)"
@@ -689,6 +688,27 @@ def iso(d):
     return d.strftime("%Y-%m-%dT%H:%M:%SZ") if d else None
 
 
+def imagen_alerta(con, al, en_tienda, historial):
+    """Imagen para mostrar una alerta: tienda de hoy, luego historial, luego catálogo. '' si no hay."""
+    for grupo in (en_tienda, historial):
+        for a in grupo:
+            if a.get("imagen") and coincide(al, a):
+                return a["imagen"], a.get("mezcla") or ""
+    nombre = normalizar(al.get("nombre")).strip()
+    if not nombre:
+        return "", ""
+    categoria = categoria_de(al.get("tipo"))
+    filas = con.execute("SELECT imagen, tipo FROM catalogo WHERE nombre_norm=? AND imagen<>''", (nombre,)).fetchall()
+    if not filas and not al.get("exacto"):
+        filas = con.execute("SELECT imagen, tipo FROM catalogo WHERE nombre_norm LIKE ? ESCAPE '\\' AND imagen<>'' "
+                            "ORDER BY length(nombre_norm) LIMIT 50", (patron_like(nombre),)).fetchall()
+    if categoria:
+        filas = [f for f in filas if categoria_de(f["tipo"]) == categoria]
+    else:  # sin categoría, la carrocería es la imagen más representativa
+        filas = sorted(filas, key=lambda f: f["tipo"] != "Body")
+    return (filas[0]["imagen"], "") if filas else ("", "")
+
+
 def estado_api():
     config = fuentes.cargar_config()
     with conectar() as con:
@@ -701,6 +721,11 @@ def estado_api():
         a["categoria"] = categoria_de(a["tipo"])
         a["alertas"] = [al["id"] for al in alertas if al["activa"] and coincide(al, a)]
         a["nuevo"] = a["aparicion"] > primera and a["aparicion"] >= limite_nuevo
+    with conectar() as con:
+        historial = [dict(f) for f in con.execute(
+            "SELECT * FROM articulos WHERE en_tienda=0 AND imagen<>'' ORDER BY ultima_vez DESC")]
+        for al in alertas:
+            al["imagen"], al["mezcla"] = imagen_alerta(con, al, articulos, historial)
     for al in alertas:
         al["coincidencias"] = sum(1 for a in articulos if al["id"] in a["alertas"])
         al["descripcion"] = describir_alerta(al)
