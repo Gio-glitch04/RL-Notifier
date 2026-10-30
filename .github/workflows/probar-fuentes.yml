@@ -1,0 +1,14 @@
+name: Probar fuentes (temporal)
+on:
+  push:
+    branches: [claude/project-thread-kh81ly]
+  workflow_dispatch:
+jobs:
+  probar:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+      - run: python prueba/probar_fuentes.py
