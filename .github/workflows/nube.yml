@@ -6,7 +6,6 @@ on:
   schedule:
     - cron: "7 * * * *"   # cada hora, a los :07
     - cron: "5 19 * * *"  # 16:05 GMT-3, cuando rota la tienda principal de RL
-  push:
   workflow_dispatch:
     inputs:
       accion:
@@ -36,7 +35,7 @@ jobs:
       - name: Código (main-web)
         uses: actions/checkout@v4
         with:
-          ref: ${{ github.event_name == 'push' && github.ref_name || 'main-web' }}
+          ref: main-web
 
       - name: Datos (rama datos)
         uses: actions/checkout@v4
