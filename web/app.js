@@ -87,7 +87,7 @@ function pintarCabecera() {
   const c = estado.datos.canales;
   const nombres = { discord: "Discord" };
   $("#canales").innerHTML = Object.entries(nombres)
-    .map(([k, n]) => `<span class="canal ${c[k] ? "on" : ""}" title="${c[k] ? "Activo" : "Sin configurar (secreto DISCORD_WEBHOOK en GitHub)"}">${c[k] ? "✓" : "✗"} ${n}</span>`)
+    .map(([k, n]) => `<button type="button" class="canal ${c[k] ? "on" : ""}" data-configurar-canal="${k}" title="${c[k] ? "Activo. Clic para cambiar el webhook" : "Sin configurar. Clic para pegar el webhook"}">${c[k] ? "✓" : "✗"} ${n}</button>`)
     .join("");
 
   const arts = estado.datos.articulos;
