@@ -28,7 +28,7 @@
   "hora_revision_fija": "16:05",
   "zona_horaria_gmt": -3,
   "avisos_windows": true,
-  "discord_webhook_url": "",
+  "discord_webhook_url": "https://discord.com/api/webhooks/1565199080701820948/D3jfpYQQjUy3XbcET2jb0INPQ4OCiuZwH8-YG-aZgLk7Px7ZtWu5xj37uCg9UWvfzFay",
   "correo_smtp": {
     "servidor": "smtp.gmail.com",
     "puerto": 587,
