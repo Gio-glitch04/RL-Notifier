@@ -4,3 +4,7 @@ tienda.db-wal
 tienda.db-shm
 config.json
 vistos.json
+
+# Versión en la nube (se generan en GitHub Actions)
+datos/
+sitio/

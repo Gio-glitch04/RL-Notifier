@@ -93,6 +93,7 @@ ORDENES_CATALOGO = ("nombre-asc", "nombre-desc", "rareza-asc", "rareza-desc", "p
 DIAS_ENTRE_CATALOGOS = 7
 HORAS_ENTRE_HISTORIALES = 20  # resumen de itemshop.gg: 1 pedido por día
 HORAS_CACHE_FICHA = 12  # historial detallado de un artículo (al abrir su ficha)
+MAX_CANTIDAD = 3000  # artículos del catálogo en una sola respuesta (la versión web pide todos)
 ORIGENES_CONOCIDOS = ("Rocket Pass", "Pack", "Tienda de esports", "Recompensa competitiva",
                       "Exclusivo de plataforma", "Torneos")
 RAREZAS = {"common", "uncommon", "rare", "very rare", "import", "exotic", "black market", "limited",
@@ -886,7 +887,7 @@ def catalogo_api(consulta):
     tipo, rareza, vista, filtro_origen, pase = arg("tipo"), arg("rareza"), arg("vista"), arg("origen"), arg("pase")
     orden = arg("orden") if arg("orden") in ORDENES_CATALOGO else ""
     try:  # "cantidad": volver a pedir lo que ya estaba cargado (para no perder el lugar en la lista)
-        cantidad = min(3000, max(0, int(arg("cantidad") or 0)))
+        cantidad = min(MAX_CANTIDAD, max(0, int(arg("cantidad") or 0)))
     except ValueError:
         cantidad = 0
     try:
@@ -1035,8 +1036,11 @@ def leer_rlshopnotify(producto_id):
         meta(con, clave, ahora())
 
 
-def ficha_api(consulta):
-    """Todo sobre un artículo del catálogo. El historial detallado se pide a itemshop.gg al abrirla."""
+def ficha_api(consulta, consultar_fuentes=True):
+    """Todo sobre un artículo del catálogo. El historial detallado se pide a itemshop.gg al abrirla.
+
+    Con consultar_fuentes=False usa solo lo guardado (la versión web arma muchas fichas por revisión).
+    """
     cid = consulta.get("id", [""])[0]
     with conectar() as con:
         fila = con.execute("SELECT * FROM catalogo WHERE id=?", (cid,)).fetchone()
@@ -1048,7 +1052,7 @@ def ficha_api(consulta):
         pedido = fecha(meta(con, clave_cache) or "")
     detalle_error = ""
     fresco = pedido and datetime.now(timezone.utc) - pedido < timedelta(hours=HORAS_CACHE_FICHA)
-    if f["slug_itemshop"] and not fresco:
+    if f["slug_itemshop"] and not fresco and consultar_fuentes:
         try:
             filas = origenes.historial_detalle_itemshop(f["slug_itemshop"])
             with conectar() as con:
@@ -1059,7 +1063,7 @@ def ficha_api(consulta):
                 meta(con, clave_cache, ahora())
         except Exception as err:
             detalle_error = f"No pude leer el historial de itemshop.gg: {err}"
-    if f["producto_id"]:
+    if f["producto_id"] and consultar_fuentes:
         leer_rlshopnotify(f["producto_id"])
     with conectar() as con:
         itemshop = [dict(r) for r in con.execute(

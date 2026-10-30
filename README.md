@@ -1,5 +1,9 @@
 # Notificador de tiendas: Rocket League + Rocket League en Fortnite
 
+> **Rama `main-web`: versión en la nube.** Corre sola en GitHub Actions (sin tu PC encendida) y la página
+> se publica en GitHub Pages. La versión para tu PC sigue en la rama `main`. Ver
+> [Versión en la nube](#versión-en-la-nube) al final.
+
 Reemplazo personal de RL Garage que funciona solo en tu PC. Muestra la tienda de Rocket League
 y la sección de vehículos de Fortnite en una página local, guarda el historial y te avisa cuando
 aparece algo de tus alertas.
@@ -99,3 +103,42 @@ salen como "desconocido". Los lotes de la tienda no figuran como origen.
 - `config.json`: configuración (no se sube a git porque guarda el webhook y el correo; si falta, se crea
   copiando `config.example.json`, que es la plantilla sin datos privados). La `lista_de_deseos` se importó como alertas la primera vez;
   desde entonces las alertas se manejan en la página.
+
+
+## Versión en la nube
+
+Todo lo de arriba sigue valiendo, con estas diferencias:
+
+- **Quién revisa:** GitHub Actions (`.github/workflows/nube.yml`) cada hora a los :07 y a las 16:05 GMT-3.
+  GitHub a veces atrasa estos horarios entre 5 y 20 minutos.
+- **Dónde están los datos:** en la rama `datos`, como archivos JSON (alertas, historial, catálogo).
+  Cada revisión guarda ahí lo nuevo. `alertas.json` lo cambia la página.
+- **La página:** <https://gio-glitch04.github.io/RL-Notifier/>. Lee esos datos; se vuelve a publicar en cada revisión.
+- **Avisos:** solo Discord (no hay notificaciones de Windows).
+- **Fichas:** el historial detallado (itemshop.gg + rlshopnotify) se arma para artículos con alerta,
+  en la tienda o vistos por el notificador; se renueva una vez por día, unos pocos por revisión.
+
+### Puesta en marcha (una sola vez)
+
+1. **Rama por defecto:** *Settings → General → Default branch* → `main-web`. GitHub solo corre horarios y
+   botones desde la rama por defecto.
+2. **Webhook de Discord:** *Settings → Secrets and variables → Actions → New repository secret*, nombre
+   `DISCORD_WEBHOOK`, valor: la URL del webhook.
+3. **Página:** *Settings → Pages → Build and deployment → Source* → `GitHub Actions`.
+4. **Primera corrida:** *Actions → Notificador en la nube → Run workflow*.
+5. **Clave para la página** (para crear/borrar alertas y usar "Revisar ahora"): en GitHub, *Settings (de tu
+   cuenta) → Developer settings → Personal access tokens → Fine-grained tokens → Generate new token*:
+   - *Repository access:* solo `RL-Notifier`.
+   - *Permissions:* `Contents` → Read and write, `Actions` → Read and write.
+   Luego en la página, botón **🔑 Conectar GitHub** y pega la clave. Se guarda solo en ese navegador.
+
+### Botones de la página
+
+| Botón | Qué hace |
+|---|---|
+| Revisar ahora | Pide a GitHub una revisión (1 a 3 minutos) |
+| Probar aviso | Manda un aviso de prueba a Discord |
+| Actualizar catálogo | Descarga de nuevo el catálogo y el origen |
+| Guardar / borrar alerta | Cambia `alertas.json` en la rama `datos` y vuelve a publicar la página (~1 min) |
+
+Para correr la revisión a mano en tu PC: `python nube.py revisar` (necesita la carpeta `datos/` con la rama `datos`).

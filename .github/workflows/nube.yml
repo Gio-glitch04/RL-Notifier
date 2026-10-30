@@ -1,0 +1,77 @@
+# Notificador en la nube: revisa la tienda, avisa por Discord y publica la página en GitHub Pages.
+# Los datos (alertas, historial, catálogo) viven en la rama "datos" como archivos JSON.
+name: Notificador en la nube
+
+on:
+  schedule:
+    - cron: "7 * * * *"   # cada hora, a los :07
+    - cron: "5 19 * * *"  # 16:05 GMT-3, cuando rota la tienda principal de RL
+  workflow_dispatch:
+    inputs:
+      accion:
+        description: "Qué hacer"
+        type: choice
+        options: [revisar, probar, catalogo, exportar]
+        default: revisar
+
+permissions:
+  contents: write
+  pages: write
+  id-token: write
+
+# Una corrida por vez: las que llegan mientras tanto esperan su turno
+concurrency:
+  group: notificador
+  cancel-in-progress: false
+
+jobs:
+  correr:
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+    environment:
+      name: github-pages
+      url: ${{ steps.publicar.outputs.page_url }}
+    steps:
+      - name: Código (main-web)
+        uses: actions/checkout@v4
+        with:
+          ref: main-web
+
+      - name: Datos (rama datos)
+        uses: actions/checkout@v4
+        with:
+          ref: datos
+          path: datos
+
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+
+      - name: ${{ inputs.accion || 'revisar' }}
+        env:
+          DISCORD_WEBHOOK: ${{ secrets.DISCORD_WEBHOOK }}
+          RAMA_CODIGO: main-web
+        run: python nube.py "${{ inputs.accion || 'revisar' }}"
+
+      - name: Guardar datos
+        working-directory: datos
+        run: |
+          git config user.name "notificador-rl[bot]"
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+          git add -A
+          git diff --cached --quiet && { echo "Sin cambios en los datos"; exit 0; }
+          git commit -q -m "Datos: ${{ inputs.accion || 'revisar' }} $(date -u +%Y-%m-%dT%H:%MZ)"
+          # Si la página cambió alertas.json mientras tanto, se suma su cambio (el robot nunca toca ese archivo)
+          for i in 1 2 3 4 5; do
+            git pull -q --rebase origin datos && git push -q origin HEAD:datos && exit 0
+            sleep $((i * 3))
+          done
+          exit 1
+
+      - uses: actions/configure-pages@v5
+      - uses: actions/upload-pages-artifact@v3
+        with:
+          path: sitio
+      - name: Publicar página
+        id: publicar
+        uses: actions/deploy-pages@v4
