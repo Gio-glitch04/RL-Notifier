@@ -7,7 +7,6 @@ on:
     - cron: "7 * * * *"   # cada hora, a los :07
     - cron: "5 19 * * *"  # 16:05 GMT-3, cuando rota la tienda principal de RL
   push:
-    branches: [claude/project-thread-kh81ly]  # TEMPORAL: prueba antes de fusionar
   workflow_dispatch:
     inputs:
       accion:
