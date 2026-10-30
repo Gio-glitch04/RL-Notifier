@@ -41,31 +41,21 @@ function mostrarAviso(texto, ms = 4500) {
   mostrarAviso.t = setTimeout(() => (a.hidden = true), ms);
 }
 
-async function api(ruta, metodo = "GET", cuerpo) {
-  const opciones = { method: metodo, headers: {} };
-  if (metodo !== "GET") {
-    opciones.headers["Content-Type"] = "application/json";
-    opciones.body = JSON.stringify(cuerpo || {});
-  }
-  const r = await fetch(ruta, opciones);
-  const datos = await r.json().catch(() => ({}));
-  if (!r.ok) throw new Error(datos.error || `Error ${r.status}`);
-  return datos;
-}
+// api() está en nube.js: responde las mismas rutas que el servidor de la versión de PC
 
 // ---------- carga ----------
 async function cargar() {
   try {
     estado.datos = await api("/api/estado");
   } catch (e) {
-    $("#estado-revision").textContent = "No pude conectar con el notificador. ¿Está abierta su ventana?";
+    $("#estado-revision").textContent = `No pude leer los datos publicados: ${e.message}`;
     return;
   }
   pintarCabecera();
   llenarFiltros();
   pintar();
   clearTimeout(cargar.t);
-  cargar.t = setTimeout(cargar, estado.datos.revision.revisando ? 2000 : 60000);
+  cargar.t = setTimeout(cargar, estado.datos.revision.revisando ? 20000 : 300000);
 }
 
 function llenarCategorias() {
@@ -79,21 +69,25 @@ function pintarCabecera() {
   llenarCategorias();
   const r = estado.datos.revision;
   const partes = [];
-  if (r.revisando) partes.push("Revisando la tienda…");
+  const acciones = { revisar: "Revisando la tienda en GitHub…", probar: "Mandando el aviso de prueba…",
+    catalogo: "Actualizando el catálogo en GitHub…", exportar: "Publicando tus cambios…" };
+  if (r.revisando) partes.push(`${acciones[r.accion] || "Trabajando en GitHub…"} (suele tardar 1 a 3 min)`);
   else partes.push(`Última revisión: ${haceCuanto(r.ultima)}${r.ultima ? ` (${fechaCorta(r.ultima)})` : ""}`);
   const proximas = [r.proxima_periodica, r.proxima_fija].filter(Boolean).sort();
   if (proximas.length && !r.revisando) partes.push(`próxima: ${fechaCorta(proximas[0])}`);
   partes.push(`cada ${r.minutos} min + fija ${r.hora_fija} (GMT${r.zona >= 0 ? "+" : ""}${r.zona})`);
   let texto = partes.join(" · ");
+  if (estado.datos.pendiente) texto += " · tus cambios de alertas se están publicando";
   if (r.errores && r.errores.length) texto += ` · ⚠ ${r.errores.join("; ")}`;
   $("#estado-revision").textContent = texto;
-  $("#btn-revisar").disabled = r.revisando;
-  $("#btn-revisar").textContent = r.revisando ? "Revisando…" : "Revisar ahora";
+  const ocupado = r.revisando && r.accion !== "exportar"; // publicar alertas no impide pedir una revisión
+  $("#btn-revisar").disabled = ocupado;
+  $("#btn-revisar").textContent = ocupado ? "Revisando…" : "Revisar ahora";
 
   const c = estado.datos.canales;
-  const nombres = { windows: "Windows", discord: "Discord", correo: "Correo" };
+  const nombres = { discord: "Discord" };
   $("#canales").innerHTML = Object.entries(nombres)
-    .map(([k, n]) => `<span class="canal ${c[k] ? "on" : ""}" title="${c[k] ? "Activo" : "Sin configurar (config.json)"}">${c[k] ? "✓" : "✗"} ${n}</span>`)
+    .map(([k, n]) => `<span class="canal ${c[k] ? "on" : ""}" title="${c[k] ? "Activo" : "Sin configurar (secreto DISCORD_WEBHOOK en GitHub)"}">${c[k] ? "✓" : "✗"} ${n}</span>`)
     .join("");
 
   const arts = estado.datos.articulos;
@@ -407,7 +401,7 @@ $("#form-alerta").addEventListener("submit", async (ev) => {
   try {
     if (f.id.value) await api(`/api/alertas/${f.id.value}`, "PUT", cuerpo);
     else await api("/api/alertas", "POST", cuerpo);
-    mostrarAviso(f.id.value ? "Alerta actualizada" : "Alerta creada. Se avisará en la próxima revisión.");
+    mostrarAviso(f.id.value ? "Alerta actualizada en GitHub." : "Alerta guardada en GitHub. Se avisará en la próxima revisión.");
     const flotante = !$("#alerta-fondo").hidden;
     cerrarFormularioFlotante();
     await cargar();
@@ -494,8 +488,8 @@ $("#btn-revisar").addEventListener("click", async () => {
   $("#btn-revisar").disabled = true;
   try {
     await api("/api/revisar", "POST");
-    mostrarAviso("Revisando la tienda…");
-    setTimeout(cargar, 1500);
+    mostrarAviso("Pedí la revisión a GitHub: tarda 1 a 3 minutos.");
+    await cargar();
   } catch (e) {
     mostrarAviso(e.message);
     $("#btn-revisar").disabled = false;
@@ -507,7 +501,7 @@ $("#btn-probar").addEventListener("click", async () => {
   b.disabled = true;
   try {
     const r = await api("/api/probar-aviso", "POST");
-    mostrarAviso(`Aviso de prueba:\nWindows: ${r.windows}\nDiscord: ${r.discord}\nCorreo: ${r.correo}`, 9000);
+    mostrarAviso(`Aviso de prueba: ${r.discord}`, 9000);
   } catch (e) {
     mostrarAviso(e.message);
   } finally {
@@ -691,7 +685,7 @@ async function abrirFicha(id) {
         ${a.origenes.length ? `<ul class="lista-origen">${a.origenes.map((o) => `<li>${esc(describirOrigen(o))} <span class="sutil">(${esc(o.fuente)})</span></li>`).join("")}</ul>`
           : `<p class="sutil">Desconocido: no figura en los Rocket Pass, packs ni otras listas de la wiki. Puede venir de cajas, drops, eventos, Twitch, lotes de la tienda u otros.</p>`}
       </section>
-      <section><h3>Historial en la tienda (${a.historial.length} ${a.historial.length === 1 ? "aparición" : "apariciones"})</h3>${a.historial_error ? `<p class="error">${esc(a.historial_error)}</p>` : ""}${historial}</section>
+      <section><h3>Historial en la tienda (${a.historial.length} ${a.historial.length === 1 ? "aparición" : "apariciones"})</h3>${a.historial_error ? `<p class="error">${esc(a.historial_error)}</p>` : ""}${a.historial_nota ? `<p class="sutil">${esc(a.historial_nota)}</p>` : ""}${historial}</section>
       ${propio}
     </div>`;
 }
@@ -718,8 +712,8 @@ document.addEventListener("keydown", (ev) => { if (ev.key === "Escape" && !$("#f
 $("#c-mas").addEventListener("click", () => cargarCatalogo(true));
 $("#btn-catalogo").addEventListener("click", async () => {
   await api("/api/catalogo/actualizar", "POST").catch((e) => mostrarAviso(e.message));
-  mostrarAviso("Actualizando el catálogo (tarda unos 30 segundos)…");
-  setTimeout(() => cargarCatalogo(), 800);
+  mostrarAviso("Pedí a GitHub actualizar el catálogo: tarda unos minutos.");
+  cargar();
 });
 
 // Actualiza los relojes cada 30 s sin volver a pintar todo
