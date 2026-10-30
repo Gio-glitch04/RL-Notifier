@@ -93,7 +93,7 @@ const claveGitHub = () => leerLocal("claveGitHub") || "";
 function pedirClave(motivo) {
   const actual = claveGitHub();
   const texto = `${motivo ? motivo + "\n\n" : ""}Pega tu clave de GitHub (token "fine-grained" solo para el repo ${nube.estado.nube.repo}, `
-    + `con permisos Contents y Actions en "Read and write"). Se guarda solo en este navegador.`
+    + `con permisos Contents, Actions y Secrets en "Read and write"). Se guarda solo en este navegador.`
     + (actual ? "\n\nDeja vacío para borrar la clave guardada." : "");
   const nueva = prompt(texto, "");
   if (nueva === null) return actual;
@@ -113,7 +113,7 @@ async function github(ruta, metodo = "GET", cuerpo) {
     cache: "no-store",
   });
   if (r.status === 401 || r.status === 403) {
-    throw new Error("GitHub rechazó la clave (¿venció o le faltan permisos Contents/Actions?). Usa 🔑 para cambiarla.");
+    throw new Error("GitHub rechazó la clave (¿venció o le faltan permisos Contents/Actions/Secrets?). Usa 🔑 para cambiarla.");
   }
   const datos = r.status === 204 ? {} : await r.json().catch(() => ({}));
   if (!r.ok) throw new Error(`GitHub: ${datos.message || r.status}`);
@@ -354,6 +354,55 @@ async function api(ruta, metodo = "GET", cuerpo) {
   if (camino === "/api/probar-aviso") return lanzar("probar").then(() => ({ discord: "pedido a GitHub, llega en 1 o 2 minutos" }));
   throw new Error("No existe");
 }
+
+// ---------- webhook de Discord: se guarda como secreto de GitHub, nunca en el repo ----------
+function cargarScript(src) {
+  return new Promise((ok, mal) => {
+    const s = document.createElement("script");
+    s.src = src;
+    s.onload = ok;
+    s.onerror = () => mal(new Error(`No pude cargar ${src}`));
+    document.head.appendChild(s);
+  });
+}
+
+async function cifrador() {
+  // libsodium (sealed box): lo que pide GitHub para guardar secretos. Se carga solo al usarlo.
+  if (!window.sodium) {
+    await cargarScript("vendor/libsodium.js");
+    await cargarScript("vendor/libsodium-wrappers.js");
+  }
+  await window.sodium.ready;
+  return window.sodium;
+}
+
+const WEBHOOK_VALIDO = /^https:\/\/(?:(?:canary|ptb)\.)?discord(?:app)?\.com\/api\/webhooks\/\d+\/[\w-]+\/?$/;
+
+async function configurarDiscord() {
+  const url = prompt("Pega la URL del webhook de Discord (Editar canal → Integraciones → Webhooks → Copiar URL).\n\n"
+    + "Se guarda como secreto de GitHub: no queda visible en el repo ni en la página.", "");
+  if (url === null) return;
+  const limpio = url.trim();
+  if (!WEBHOOK_VALIDO.test(limpio)) throw new Error("Eso no parece un webhook de Discord (https://discord.com/api/webhooks/…).");
+  const clave = await github("/actions/secrets/public-key");
+  const s = await cifrador();
+  const cifrado = s.crypto_box_seal(s.from_string(limpio), s.from_base64(clave.key, s.base64_variants.ORIGINAL));
+  await github("/actions/secrets/DISCORD_WEBHOOK", "PUT", {
+    encrypted_value: s.to_base64(cifrado, s.base64_variants.ORIGINAL), key_id: clave.key_id,
+  });
+  await lanzar("probar");
+}
+
+document.addEventListener("click", async (ev) => {
+  if (!ev.target.closest('[data-configurar-canal="discord"]')) return;
+  try {
+    await configurarDiscord();
+    mostrarAviso("Webhook guardado en GitHub. En 1 o 2 minutos llega un aviso de prueba a Discord.", 9000);
+    cargar();
+  } catch (e) {
+    mostrarAviso(e.message, 9000);
+  }
+});
 
 // ---------- botón de la clave ----------
 function pintarClave() {

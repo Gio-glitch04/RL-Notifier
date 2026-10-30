@@ -279,6 +279,8 @@ def main():
         n.actualizar_catalogo()
     elif accion == "probar":
         resultado = n.prueba_aviso()
+        with n.conectar() as con:  # el botón de la página acaba de guardar (o cambiar) el webhook
+            n.meta(con, "nube_discord", "1" if config.get("discord_webhook_url") else "0")
         log(f"Aviso de prueba: {resultado}")
         if resultado.get("discord") != "ok":
             print(f"::warning::Discord: {resultado.get('discord')}")

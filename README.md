@@ -122,14 +122,16 @@ Todo lo de arriba sigue valiendo, con estas diferencias:
 
 1. **Rama por defecto:** *Settings → General → Default branch* → `main-web`. GitHub solo corre horarios y
    botones desde la rama por defecto.
-2. **Webhook de Discord:** *Settings → Secrets and variables → Actions → New repository secret*, nombre
-   `DISCORD_WEBHOOK`, valor: la URL del webhook.
+2. **Webhook de Discord:** en la página, clic en **✗ Discord** y pega la URL del webhook (necesita la clave del
+   paso 5). Se guarda como secreto `DISCORD_WEBHOOK` de GitHub y manda un aviso de prueba. También se puede
+   crear a mano en *Settings → Secrets and variables → Actions*. **Nunca** lo pegues en `config.example.json`
+   ni en otro archivo: el repo es público.
 3. **Página:** *Settings → Pages → Build and deployment → Source* → `GitHub Actions`.
 4. **Primera corrida:** *Actions → Notificador en la nube → Run workflow*.
 5. **Clave para la página** (para crear/borrar alertas y usar "Revisar ahora"): en GitHub, *Settings (de tu
    cuenta) → Developer settings → Personal access tokens → Fine-grained tokens → Generate new token*:
    - *Repository access:* solo `RL-Notifier`.
-   - *Permissions:* `Contents` → Read and write, `Actions` → Read and write.
+   - *Permissions:* `Contents`, `Actions` y `Secrets` → Read and write.
    Luego en la página, botón **🔑 Conectar GitHub** y pega la clave. Se guarda solo en ese navegador.
 
 ### Botones de la página

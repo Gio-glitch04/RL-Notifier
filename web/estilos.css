@@ -29,7 +29,8 @@ h1 { margin: 0; font-size: 20px; }
 h2 { margin: 0 0 8px; font-size: 16px; }
 .acciones { display: flex; flex-wrap: wrap; gap: 10px; align-items: center; }
 .canales { display: flex; gap: 6px; }
-.canal { font-size: 12px; padding: 3px 8px; border-radius: 99px; border: 1px solid var(--borde); color: var(--sutil); }
+.canal { font: inherit; font-size: 12px; padding: 3px 8px; border-radius: 99px; border: 1px solid var(--borde); color: var(--sutil); background: transparent; cursor: pointer; }
+.canal:hover { border-color: var(--sutil); }
 .canal.on { color: var(--ok); border-color: color-mix(in srgb, var(--ok) 45%, transparent); }
 .btn { background: var(--panel-2); border: 1px solid var(--borde); padding: 8px 14px; border-radius: 8px; cursor: pointer; }
 .btn:hover { border-color: #3a4560; }
