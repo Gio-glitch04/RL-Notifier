@@ -55,7 +55,7 @@ PINTURAS = {"titanium white", "black", "crimson", "sky blue", "cobalt", "burnt s
 # (15 descargas por actualización, con pausa entre cada una; su robots.txt solo excluye /api/).
 URL_CATALOGO = "https://rl.source.gs/items/{}/index.json"
 URL_CATALOGO_BASE = "https://rl.source.gs"
-CATEGORIAS = {
+CATEGORIAS_CATALOGO = {
     "bodies": "Body", "wheels": "Wheels", "decals": "Decal", "goal-explosions": "Goal Explosion",
     "rocket-boosts": "Rocket Boost", "trails": "Trail", "toppers": "Topper", "antennas": "Antenna",
     "engine-audio": "Engine Audio", "paint-finishes": "Paint Finish", "player-anthems": "Player Anthem",
@@ -135,7 +135,7 @@ CREATE TABLE IF NOT EXISTS articulos (
     id TEXT PRIMARY KEY, tienda TEXT, seccion TEXT, nombre TEXT, tipo TEXT, color TEXT, color_hex TEXT,
     rareza TEXT, rareza_color TEXT, precio TEXT, precio_num INTEGER, moneda TEXT, imagen TEXT, url TEXT,
     hasta TEXT, primera_vez TEXT, ultima_vez TEXT, aparicion TEXT, en_tienda INTEGER DEFAULT 0,
-    apariciones INTEGER DEFAULT 0, mezcla TEXT DEFAULT '', orden INTEGER DEFAULT 0
+    apariciones INTEGER DEFAULT 0, mezcla TEXT DEFAULT '', orden INTEGER DEFAULT 0, contenido TEXT DEFAULT ''
 );
 CREATE TABLE IF NOT EXISTS alertas (
     id INTEGER PRIMARY KEY AUTOINCREMENT, nombre TEXT DEFAULT '', color TEXT DEFAULT '',
@@ -198,7 +198,7 @@ def iniciar_db(config):
     with conectar() as con:
         con.executescript(ESQUEMA)
         columnas = {f["name"] for f in con.execute("PRAGMA table_info(articulos)")}
-        for col, tipo in (("mezcla", "TEXT DEFAULT ''"), ("orden", "INTEGER DEFAULT 0")):
+        for col, tipo in (("mezcla", "TEXT DEFAULT ''"), ("orden", "INTEGER DEFAULT 0"), ("contenido", "TEXT DEFAULT ''")):
             if col not in columnas:  # bases creadas con una versión anterior
                 con.execute(f"ALTER TABLE articulos ADD COLUMN {col} {tipo}")
         if "exacto" not in {f["name"] for f in con.execute("PRAGMA table_info(alertas)")}:
@@ -279,18 +279,20 @@ def guardar_tienda(con, tienda, articulos, momento):
         hasta = a.get("hasta_iso") or (previo["hasta"] if previo and previo["en_tienda"] else "")
         datos = (a["tienda"], a["seccion"], a["nombre"], a["tipo"], a.get("color", ""), a.get("color_hex", ""),
                  a.get("rareza", ""), a.get("rareza_color", ""), a["precio"], a.get("precio_num"),
-                 a.get("moneda", ""), imagen, a["url"], hasta, a.get("mezcla", ""), orden)
+                 a.get("moneda", ""), imagen, a["url"], hasta, a.get("mezcla", ""), orden,
+                 json.dumps(a["contenido"], ensure_ascii=False) if a.get("contenido")
+                 else (previo["contenido"] or "") if previo else "")
         if previo is None:
             con.execute("INSERT INTO articulos (tienda, seccion, nombre, tipo, color, color_hex, rareza, "
-                        "rareza_color, precio, precio_num, moneda, imagen, url, hasta, mezcla, orden, id, "
+                        "rareza_color, precio, precio_num, moneda, imagen, url, hasta, mezcla, orden, contenido, id, "
                         "primera_vez, ultima_vez, aparicion, en_tienda, apariciones) "
-                        "VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,1,1)",
+                        "VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,1,1)",
                         datos + (a["id"], momento, momento, momento))
             nuevos.append(a["id"])
         else:
             volvio = not previo["en_tienda"]
             con.execute("UPDATE articulos SET tienda=?, seccion=?, nombre=?, tipo=?, color=?, color_hex=?, "
-                        "rareza=?, rareza_color=?, precio=?, precio_num=?, moneda=?, imagen=?, url=?, hasta=?, mezcla=?, orden=?, "
+                        "rareza=?, rareza_color=?, precio=?, precio_num=?, moneda=?, imagen=?, url=?, hasta=?, mezcla=?, orden=?, contenido=?, "
                         "ultima_vez=?, en_tienda=1, aparicion=?, apariciones=apariciones+? WHERE id=?",
                         datos + (momento, momento if volvio else previo["aparicion"], int(volvio), a["id"]))
             if volvio:
@@ -527,8 +529,8 @@ def actualizar_catalogo():
     EstadoCatalogo.actualizando, EstadoCatalogo.error = True, ""
     momento, total, errores = ahora(), 0, []
     try:
-        for i, (categoria, tipo) in enumerate(CATEGORIAS.items(), 1):
-            EstadoCatalogo.progreso = f"catálogo {i}/{len(CATEGORIAS)}: {tipo}"
+        for i, (categoria, tipo) in enumerate(CATEGORIAS_CATALOGO.items(), 1):
+            EstadoCatalogo.progreso = f"catálogo {i}/{len(CATEGORIAS_CATALOGO)}: {tipo}"
             if i > 1:
                 threading.Event().wait(1.5)  # sin saturar el sitio
             try:
@@ -821,6 +823,20 @@ def articulo_alerta(con, al, en_tienda, historial):
     }
 
 
+def contenido_con_catalogo(texto_json, indice):
+    """Artículos de un lote, cada uno con su id del catálogo (para abrir su ficha) si se encuentra."""
+    try:
+        contenido = json.loads(texto_json or "[]")
+    except ValueError:
+        return []
+    for x in contenido:
+        ids = ids_por_nombre(indice, x.get("tipo", ""), x.get("nombre", ""))
+        if not ids and x.get("tipo", "").startswith("Animated "):
+            ids = ids_por_nombre(indice, x["tipo"][len("Animated "):], x.get("nombre", ""))
+        x["catalogo_id"] = min(ids) if ids else ""
+    return contenido
+
+
 def estado_api():
     config = fuentes.cargar_config()
     with conectar() as con:
@@ -829,7 +845,10 @@ def estado_api():
             "SELECT * FROM articulos WHERE en_tienda=1 ORDER BY tienda, orden")]
         primera = meta(con, "primera_revision") or ""
     limite_nuevo = iso(datetime.now(timezone.utc) - timedelta(hours=24))
+    with conectar() as con:
+        indice = indice_catalogo(con)
     for a in articulos:
+        a["contenido"] = contenido_con_catalogo(a.get("contenido"), indice)
         a["categoria"] = categoria_de(a["tipo"])
         a["alertas"] = [al["id"] for al in alertas if al["activa"] and coincide(al, a)]
         a["nuevo"] = a["aparicion"] > primera and a["aparicion"] >= limite_nuevo

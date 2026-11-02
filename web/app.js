@@ -124,7 +124,7 @@ function filtrar(lista) {
     for (const a of estado.datos.articulos) if (a.alertas.length) alertas.add(a.id);
   }
   return lista.filter((a) => {
-    if (q && !norm(`${a.nombre} ${a.color} ${a.tipo} ${a.rareza} ${a.seccion}`).includes(q)) return false;
+    if (q && !norm(`${a.nombre} ${a.color} ${a.tipo} ${a.rareza} ${a.seccion} ${(a.contenido || []).map((x) => x.nombre).join(" ")}`).includes(q)) return false;
     if (tipo && a.tipo !== tipo) return false;
     if (rareza && a.rareza !== rareza) return false;
     if (color && a.color !== color) return false;
@@ -253,13 +253,37 @@ function pintarTienda() {
   cont.innerHTML = [...grupos].map(([seccion, arts]) => {
     const fin = arts.map((a) => a.hasta).filter(Boolean).sort()[0];
     const r = restante(fin);
+    const lotes = arts.filter((a) => a.contenido && a.contenido.length);
+    const sueltos = arts.filter((a) => !lotes.includes(a));
     return `<section class="seccion">
       <div class="seccion-cabecera"><h2>${esc(seccion)}</h2>
         <span class="reloj ${r.pronto ? "pronto" : ""}" data-hasta="${esc(fin || "")}">${r.texto ? "⏱ " + esc(r.texto) : ""}</span>
         <span class="sutil">${arts.length} artículo${arts.length === 1 ? "" : "s"}</span></div>
-      <div class="rejilla">${arts.map(tarjeta).join("")}</div>
+      ${sueltos.length ? `<div class="rejilla">${sueltos.map(tarjeta).join("")}</div>` : ""}
+      ${lotes.map(subseccionLote).join("")}
     </section>`;
   }).join("") + seccionPacks();
+}
+
+// ---------- lotes (bundles): cada uno en su propia sub-sección, con lo que trae ----------
+function articuloLote(x) {
+  const rareza = colorSeguro(x.rareza_color) || "#8a94a8";
+  const img = urlSegura(x.imagen);
+  const contenido = `<span class="pack-mini" style="--rareza:${rareza}">${img ? `<img src="${esc(img)}" alt="" loading="lazy" referrerpolicy="no-referrer" class="mezcla-screen">` : ""}</span>
+    <span class="pack-texto"><b>${esc(x.nombre)}${x.color ? ` <span class="pintura"><span class="punto" style="background:${colorSeguro(x.color_hex) || "transparent"}"></span>${esc(x.color)}</span>` : ""}</b>
+      <small>${esc([x.tipo, x.rareza].filter(Boolean).join(" · "))}</small></span>`;
+  return x.catalogo_id ? `<li><a href="#" data-ficha="${esc(x.catalogo_id)}" title="Ver ficha">${contenido}</a></li>` : `<li><span>${contenido}</span></li>`;
+}
+
+function subseccionLote(a) {
+  return `<div class="lote">
+    <div class="lote-cabecera"><h3>${esc(a.nombre)}</h3>
+      <span class="sutil">${a.contenido.length} artículo${a.contenido.length === 1 ? "" : "s"}${a.precio ? " · " + esc(a.precio) : ""}</span></div>
+    <div class="lote-cuerpo">
+      <div class="lote-tarjeta">${tarjeta(a)}</div>
+      <ul class="pack-lista lote-lista">${a.contenido.map(articuloLote).join("")}</ul>
+    </div>
+  </div>`;
 }
 
 async function pintarHistorial() {
