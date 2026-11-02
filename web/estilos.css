@@ -210,3 +210,24 @@ a.alerta-titulo:hover { text-decoration: underline; }
   .alertas { grid-template-columns: 1fr; }
   .rejilla { grid-template-columns: repeat(auto-fill, minmax(150px, 1fr)); gap: 10px; }
 }
+
+/* packs de temporada (pestaña Rocket League) */
+.rejilla-packs { grid-template-columns: repeat(auto-fill, minmax(260px, 1fr)); }
+.tarjeta.pack { --rareza: #f08d3a; }
+.pack-img { position: relative; aspect-ratio: 16 / 9; background: #11151f; display: grid; place-items: center; overflow: hidden; }
+.pack-img img { width: 100%; height: 100%; object-fit: cover; }
+.pack-lista { list-style: none; margin: 6px 0 0; padding: 0; display: flex; flex-direction: column; gap: 6px; }
+.pack-lista a, .pack-lista li > span { display: flex; gap: 8px; align-items: center; color: inherit; text-decoration: none; }
+.pack-lista a:hover b { text-decoration: underline; }
+.pack-mini { --rareza: #8a94a8; flex: none; width: 40px; height: 40px; border-radius: 8px; display: grid; place-items: center;
+  background: radial-gradient(75% 75% at 50% 55%, color-mix(in srgb, var(--rareza) 35%, transparent), transparent), #11151f;
+  border: 1px solid color-mix(in srgb, var(--rareza) 45%, transparent); }
+.pack-mini img { max-width: 34px; max-height: 34px; object-fit: contain; }
+.pack-texto { display: flex; flex-direction: column; min-width: 0; font-size: 13px; }
+.pack-texto b { font-weight: 600; display: flex; flex-wrap: wrap; gap: 4px; align-items: center; }
+.pack-texto small { color: var(--sutil); font-size: 11px; }
+
+/* drops en el catálogo */
+.drops { font-size: 12px; color: #cfd6e4; display: inline-flex; align-items: center; gap: 3px; flex-wrap: wrap; }
+.drops.no { color: var(--sutil); }
+.punto-drop { display: inline-block; width: 8px; height: 8px; border-radius: 2px; transform: rotate(45deg); margin-right: 1px; }

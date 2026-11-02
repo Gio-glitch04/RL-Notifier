@@ -35,7 +35,7 @@ DATOS = CARPETA / "datos"  # copia de trabajo de la rama "datos"
 SITIO = CARPETA / "sitio"  # lo que se publica en GitHub Pages
 ARCHIVO_ALERTAS = "alertas.json"  # lo escribe la página; el robot solo lo lee
 TABLAS = ("articulos", "catalogo", "origenes", "historial_externo", "historial_rsn", "resumen_historial",
-          "historial_detalle", "avisos", "meta")
+          "historial_detalle", "avisos", "packs", "drops", "meta")
 MINUTO_CRON = 7  # .github/workflows/nube.yml revisa a los :07 de cada hora
 FICHAS_POR_CORRIDA = 25  # historiales detallados que se piden a itemshop.gg / rlshopnotify en cada corrida
 HORAS_CACHE_FICHA_NUBE = 24
@@ -269,6 +269,11 @@ def main():
         guardar_estado_revision(config)
         if n.catalogo_vencido():
             n.actualizar_catalogo()
+        elif n.packs_drops_vencido():  # packs de temporada y drops (wiki): semanal
+            try:
+                n.actualizar_packs_drops()
+            except Exception as err:
+                log(f"No pude leer packs y drops de la wiki: {err}")
         elif n.historial_vencido():
             try:
                 n.actualizar_historial_externo()

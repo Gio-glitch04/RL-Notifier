@@ -196,15 +196,53 @@ function tarjeta(a) {
   </article>`;
 }
 
+// ---------- packs de temporada (se compran con dinero real; datos de la wiki) ----------
+const TIPOS_PACK = { Rookie: "Rookie", Veteran: "Veteran", Elite: "Elite", Rocketeer: "Rocketeer", Starter: "Inicial", Customization: "Personalización" };
+
+function articuloPack(a) {
+  const rareza = colorSeguro(a.rareza_color) || COLORES_RAREZA[norm(a.rareza)] || "#8a94a8";
+  const img = urlSegura(a.imagen);
+  const nombre = `${esc(a.nombre)}${a.pintura ? " " + tag(a.pintura, "", colorPintura(a.pintura) || "") : ""}`;
+  const contenido = `<span class="pack-mini" style="--rareza:${rareza}">${img ? `<img src="${esc(img)}" alt="" loading="lazy" referrerpolicy="no-referrer" class="mezcla-screen">` : ""}</span>
+    <span class="pack-texto"><b>${nombre}</b><small>${esc(a.tipo)} · ${esc(a.rareza)}</small></span>`;
+  return a.catalogo_id ? `<li><a href="#" data-ficha="${esc(a.catalogo_id)}" title="Ver ficha">${contenido}</a></li>` : `<li><span>${contenido}</span></li>`;
+}
+
+function tarjetaPack(p) {
+  const img = urlSegura(p.imagen);
+  const contenido = p.contenido.length ? `<ul class="pack-lista">${p.contenido.map(articuloPack).join("")}</ul>`
+    : `<p class="sutil">La wiki todavía no publicó qué trae este pack.</p>`;
+  return `<article class="tarjeta pack">
+    <div class="pack-img">${img ? `<img src="${esc(img)}" alt="${esc(p.nombre)}" loading="lazy" referrerpolicy="no-referrer">` : `<span class="sin-imagen">Sin imagen</span>`}
+      <div class="etiquetas"><span><span class="etiqueta">Temporada ${esc(p.temporada)}</span></span><span></span></div></div>
+    <div class="cuerpo">
+      <h3>Pack ${esc(TIPOS_PACK[p.tipo] || p.tipo)}</h3>
+      <span class="tipo">${esc(p.nombre)}${p.precio ? ` · ${esc(p.precio)}` : ""}</span>
+      ${contenido}
+    </div>
+    <div class="botones-tarjeta">${urlSegura(p.url) ? `<a class="btn btn-chico" href="${esc(p.url)}" target="_blank" rel="noopener noreferrer">Ver en la wiki ↗</a>` : ""}</div>
+  </article>`;
+}
+
+function seccionPacks() {
+  const packs = estado.datos.packs || [];
+  if (estado.vista !== "Rocket League" || !packs.length || $("#f-alerta").checked) return "";
+  return `<section class="seccion">
+    <div class="seccion-cabecera"><h2>Packs de temporada</h2>
+      <span class="sutil">${packs.length} a la venta · con dinero real · datos de la wiki de Rocket League</span></div>
+    <div class="rejilla rejilla-packs">${packs.map(tarjetaPack).join("")}</div>
+  </section>`;
+}
+
 function pintarTienda() {
   const lista = ordenar(filtrar(articulosVista()));
   const cont = $("#vista-tienda");
   if (!lista.length) {
-    cont.innerHTML = `<div class="vacio">${estado.datos.revision.ultima ? "No hay artículos con estos filtros." : "Esperando la primera revisión…"}</div>`;
+    cont.innerHTML = `<div class="vacio">${estado.datos.revision.ultima ? "No hay artículos con estos filtros." : "Esperando la primera revisión…"}</div>` + seccionPacks();
     return;
   }
   if ($("#f-orden").value !== "seccion") {
-    cont.innerHTML = `<div class="rejilla">${lista.map(tarjeta).join("")}</div>`;
+    cont.innerHTML = `<div class="rejilla">${lista.map(tarjeta).join("")}</div>` + seccionPacks();
     return;
   }
   const grupos = new Map();
@@ -221,7 +259,7 @@ function pintarTienda() {
         <span class="sutil">${arts.length} artículo${arts.length === 1 ? "" : "s"}</span></div>
       <div class="rejilla">${arts.map(tarjeta).join("")}</div>
     </section>`;
-  }).join("");
+  }).join("") + seccionPacks();
 }
 
 async function pintarHistorial() {
@@ -564,6 +602,7 @@ function tarjetaCatalogo(a) {
       <h3 data-ficha="${esc(a.id)}">${esc(a.nombre_completo || a.nombre)}</h3>
       <span class="tipo">${esc(a.tipo)}${a.calidad && a.calidad !== a.rareza ? ` · ${esc(a.calidad)}` : ""}</span>
       ${textoOrigen(a)}
+      ${textoDrops(a)}
       <span class="visto">${a.ultima_vez
         ? `Última vez en tienda: ${esc(fechaDia(a.ultima_vez))}${a.ultimo_precio != null ? ` · ${esc(a.ultimo_precio.toLocaleString("es"))} créditos` : ""} · ${a.veces} ${a.veces === 1 ? "vez" : "veces"}`
         : "Sin registro en la tienda"}</span>
@@ -619,6 +658,17 @@ function describirOrigen(o) {
   return [o.origen, o.detalle, o.nivel ? `nivel ${o.nivel}` : ""].filter(Boolean).join(" · ");
 }
 
+// Drops: cada drop da un artículo de su rareza o mayor, así que un Import sale en Sport, Special, Deluxe e Import
+const COLORES_DROP = { Sport: "#7fc4f5", Special: "#4c8cff", Deluxe: "#9b5cf0", Import: "#e0413e", Exotic: "#ffd24a", "Black Market": "#d63cff" };
+
+function textoDrops(a, largo = false) {
+  if (!a.drops || !a.drops.length) return `<span class="drops no">No sale en drops</span>`;
+  const puntos = a.drops.map((d) => `<i class="punto-drop" style="background:${COLORES_DROP[d]}" title="${esc(d)} Drop"></i>`).join("");
+  const texto = largo ? a.drops.map((d) => tag(d + " Drop", "", COLORES_DROP[d])).join(" ")
+    : `Drops: ${esc(a.drops[0])}${a.drops.length > 1 ? `–${esc(a.drops[a.drops.length - 1])}` : ""}`;
+  return largo ? texto : `<span class="drops" title="Puede salir en: ${esc(a.drops.join(", "))} (rareza en drops: ${esc(a.drop_rareza)})">${puntos} ${texto}</span>`;
+}
+
 function textoOrigen(a) {
   if (!a.origenes || !a.origenes.length) return `<span class="origen desconocido">Origen: desconocido</span>`;
   const extra = a.origenes.length > 1 ? ` (+${a.origenes.length - 1})` : "";
@@ -640,16 +690,16 @@ async function abrirFicha(id) {
   const rareza = colorSeguro(a.rareza_color) || "#8a94a8";
   const img = urlSegura(a.imagen);
   const dato = (t, v) => (v || v === 0 ? `<div class="dato"><dt>${esc(t)}</dt><dd>${esc(v)}</dd></div>` : "");
-  const nombresFuente = { "rlshopnotify": "rlshopnotify", "itemshop.gg": "itemshop.gg", "este notificador": "notificador" };
+  const nombresFuente = { "rlshopnotify": "rlshopnotify", "itemshop.gg": "itemshop.gg", "este notificador": "notificador", "pack de temporada": "pack de temporada" };
   const historial = a.historial.length ? `
       <div class="tabla-envoltura"><table class="tabla">
         <thead><tr><th>Llegó</th><th>Se fue</th><th>Precio</th><th>Pintura</th><th>Sección</th><th>Fuente</th></tr></thead>
         <tbody>${a.historial.map((h) => `<tr><td>${esc(fechaDia(h.llegada))}</td><td>${esc(fechaDia(h.salida) || h.salida || "")}</td>
-          <td>${h.precio != null ? `${esc(h.precio.toLocaleString("es"))} créditos` : ""}</td>
+          <td>${h.precio != null ? `${esc(h.precio.toLocaleString("es"))} créditos` : esc(h.precio_texto || "")}</td>
           <td>${h.pintura ? tag(h.pintura, "", colorPintura(h.pintura) || "") : `<span class="sutil">—</span>`}</td>
           <td>${esc(h.seccion)}${h.lote ? ` <span class="tag tag-neutro">lote</span>` : ""}</td>
           <td>${h.fuentes.map((f) => `<span class="tag tag-fuente">${esc(nombresFuente[f] || f)}</span>`).join(" ")}</td></tr>`).join("")}</tbody>
-      </table></div>` : `<p class="sutil">Sin apariciones registradas en la tienda (rlshopnotify desde mayo de 2026, itemshop.gg desde septiembre de 2026).</p>`;
+      </table></div>` : `<p class="sutil">Sin apariciones registradas en la tienda (rlshopnotify desde mayo de 2026, itemshop.gg desde septiembre de 2026) ni en packs de temporada conocidos.</p>`;
   const propio = a.propio.length ? `
     <section><h3>Visto por este notificador</h3>
       <div class="tabla-envoltura"><table class="tabla">
@@ -670,6 +720,7 @@ async function abrirFicha(id) {
           ${dato("Veces en tienda", a.ultima_vez ? a.veces : "")}
           ${dato("Último precio", a.ultimo_precio != null ? `${a.ultimo_precio.toLocaleString("es")} créditos` : "")}
           ${dato("Colores vistos", a.pinturas.length ? a.pinturas.join(", ") : "")}
+          <div class="dato"><dt>Drops</dt><dd>${a.drops && a.drops.length ? textoDrops(a, true) : "No sale en drops"}</dd></div>
         </dl>
         <div class="fila-botones izq">
           <button class="btn btn-principal btn-chico" data-crear-alerta-ficha="1">+ Alerta</button>
