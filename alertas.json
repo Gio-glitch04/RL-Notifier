@@ -112,5 +112,6 @@
 {"id":121,"nombre":"Zhou GFP","color":"","tipo":"Ruedas","rareza":"","tienda":"","precio_max":null,"activa":1,"exacto":1,"creada":"2026-10-29T17:55:13Z"},
 {"id":122,"nombre":"Animus GP","color":"","tipo":"Carrocería","rareza":"","tienda":"","precio_max":null,"activa":1,"exacto":1,"creada":"2026-10-29T17:55:35Z"},
 {"id":1793382890599,"nombre":"Dueling Dragons","color":"","tipo":"Explosión de gol","rareza":"","tienda":"","precio_max":null,"activa":1,"exacto":1,"creada":"2026-10-30T17:54:50Z"},
-{"id":1793382895253,"nombre":"Dueling Dragons","color":"","tipo":"Explosión de gol","rareza":"","tienda":"","precio_max":null,"activa":1,"exacto":1,"creada":"2026-10-30T17:54:55Z"}
+{"id":1793382895253,"nombre":"Dueling Dragons","color":"","tipo":"Explosión de gol","rareza":"","tienda":"","precio_max":null,"activa":1,"exacto":1,"creada":"2026-10-30T17:54:55Z"},
+{"id":1793635129171,"nombre":"Santa Fe","color":"","tipo":"Ruedas","rareza":"","tienda":"","precio_max":null,"activa":1,"exacto":1,"creada":"2026-11-02T15:58:49Z"}
 ]
