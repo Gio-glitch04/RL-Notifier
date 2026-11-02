@@ -94,7 +94,7 @@ DIAS_ENTRE_CATALOGOS = 7
 HORAS_ENTRE_HISTORIALES = 20  # resumen de itemshop.gg: 1 pedido por día
 HORAS_CACHE_FICHA = 12  # historial detallado de un artículo (al abrir su ficha)
 MAX_CANTIDAD = 3000  # artículos del catálogo en una sola respuesta (la versión web pide todos)
-ORIGENES_CONOCIDOS = ("Rocket Pass", "Pack", "Tienda de esports", "Recompensa competitiva",
+ORIGENES_CONOCIDOS = ("Rocket Pass", "Pack de temporada", "Pack", "Tienda de esports", "Recompensa competitiva",
                       "Exclusivo de plataforma", "Torneos")
 RAREZAS = {"common", "uncommon", "rare", "very rare", "import", "exotic", "black market", "limited",
            "legendary", "premium"}
@@ -171,6 +171,11 @@ CREATE TABLE IF NOT EXISTS avisos (
     alerta_id INTEGER, articulo_id TEXT, aparicion TEXT, enviado TEXT,
     PRIMARY KEY (alerta_id, articulo_id, aparicion)
 );
+CREATE TABLE IF NOT EXISTS packs (
+    nombre TEXT PRIMARY KEY, temporada INTEGER, tipo TEXT, disponible INTEGER, imagen TEXT, precio TEXT,
+    lanzado TEXT, retirado TEXT, url TEXT, contenido TEXT, actualizado TEXT
+);
+CREATE TABLE IF NOT EXISTS drops (catalogo_id TEXT PRIMARY KEY, rareza TEXT);
 CREATE TABLE IF NOT EXISTS meta (clave TEXT PRIMARY KEY, valor TEXT);
 """
 
@@ -549,7 +554,8 @@ def actualizar_catalogo():
                 meta(con, "catalogo_actualizado", momento)
             n = con.execute("SELECT COUNT(*) FROM catalogo").fetchone()[0]  # si algo falló, queda lo anterior
         log(f"Catálogo actualizado: {total} artículos descargados, {n} en total")
-        for nombre, paso in (("origen", actualizar_origenes), ("historial de itemshop.gg", actualizar_historial_externo)):
+        for nombre, paso in (("origen", actualizar_origenes), ("packs y drops", actualizar_packs_drops),
+                             ("historial de itemshop.gg", actualizar_historial_externo)):
             try:
                 EstadoCatalogo.progreso = nombre
                 paso()
@@ -627,6 +633,72 @@ def actualizar_historial_externo():
              json.dumps(d["pinturas"], ensure_ascii=False), d["slug"], momento) for d in datos])
         meta(con, "historial_externo_actualizado", momento)
     log(f"Historial de itemshop.gg: {len(datos)} artículos")
+
+
+def ids_por_nombre(indice, tipo, nombre):
+    """Artículos del catálogo con ese nombre y tipo (mismo criterio que el origen)."""
+    return indice.get((tipo, origenes.slug(nombre))) or set()
+
+
+def actualizar_packs_drops():
+    """Packs de temporada (contenido y si siguen a la venta) y qué artículos salen en drops. Semanal."""
+    packs = origenes.packs_temporada()
+    drops = origenes.drops_wiki()
+    momento = ahora()
+    with conectar() as con:
+        indice = indice_catalogo(con)
+        con.execute("DELETE FROM packs")
+        con.execute("DELETE FROM origenes WHERE fuente='wiki (packs)'")
+        sin_unir = 0
+        for p in packs:
+            for a in p["contenido"]:
+                a["catalogo_ids"] = sorted(ids_por_nombre(indice, a["tipo"], a["nombre"]))
+                sin_unir += not a["catalogo_ids"]
+                for cid in a["catalogo_ids"]:
+                    con.execute("INSERT OR REPLACE INTO origenes VALUES (?,?,?,?,?)",
+                                (cid, "Pack de temporada", p["nombre"], None, "wiki (packs)"))
+            con.execute("INSERT INTO packs VALUES (?,?,?,?,?,?,?,?,?,?,?)", (
+                p["nombre"], p["temporada"], p["tipo"], int(p["disponible"]), p["imagen"], p["precio"], p["lanzado"],
+                p["retirado"], p["url"], json.dumps(p["contenido"], ensure_ascii=False), momento))
+        filas = {}
+        for d in drops:
+            for cid in ids_por_nombre(indice, d["tipo"], d["nombre"]):
+                filas.setdefault(cid, d["rareza"])
+        if filas:
+            con.execute("DELETE FROM drops")
+            con.executemany("INSERT INTO drops VALUES (?,?)", list(filas.items()))
+        meta(con, "packs_drops_actualizado", momento)
+    log(f"Packs de temporada: {len(packs)} ({sum(p['disponible'] for p in packs)} a la venta, "
+        f"{sum(bool(p['contenido']) for p in packs)} con contenido, {sin_unir} artículos sin unir). "
+        f"Drops: {len(filas)} artículos del catálogo de {len(drops)} en la wiki")
+
+
+def packs_drops_vencido():
+    with conectar() as con:
+        ultima = fecha(meta(con, "packs_drops_actualizado") or "")
+    return ultima is None or datetime.now(timezone.utc) - ultima > timedelta(days=DIAS_ENTRE_CATALOGOS)
+
+
+def drops_de(rareza):
+    """Drops que pueden dar un artículo de esa rareza: los de su rareza o menor."""
+    escala = [r for _, r in origenes.DROPS]
+    return [n for n, r in origenes.DROPS[:escala.index(rareza) + 1]] if rareza in escala else []
+
+
+def packs_api(con):
+    """Packs de temporada a la venta, con cada artículo unido al catálogo (imagen y ficha)."""
+    filas = [dict(f) for f in con.execute("SELECT * FROM packs WHERE disponible=1")]
+    catalogo = {f["id"]: dict(f) for f in con.execute("SELECT id, imagen, rareza_color FROM catalogo")}
+    orden_tipo = {"Rookie": 0, "Veteran": 1, "Elite": 2, "Rocketeer": 3}
+    for p in filas:
+        p["contenido"] = json.loads(p["contenido"] or "[]")
+        for a in p["contenido"]:
+            cat = next((catalogo[c] for c in a.get("catalogo_ids", []) if c in catalogo), None)
+            a["catalogo_id"] = cat["id"] if cat else ""
+            a["imagen"] = cat["imagen"] if cat else ""
+            a["rareza_color"] = cat["rareza_color"] if cat else ""
+            a.pop("catalogo_ids", None)
+    return sorted(filas, key=lambda p: (-p["temporada"], orden_tipo.get(p["tipo"], 9)))
 
 
 def historial_vencido():
@@ -771,8 +843,11 @@ def estado_api():
         al["coincidencias"] = sum(1 for a in articulos if al["id"] in a["alertas"])
         al["descripcion"] = describir_alerta(al)
     c = config.get("correo_smtp") or {}
+    with conectar() as con:
+        packs = packs_api(con)
     return {
         "articulos": articulos,
+        "packs": packs,
         "alertas": alertas,
         "categorias": CATEGORIAS,
         "revision": {
@@ -831,10 +906,11 @@ def datos_catalogo(con):
         e.update(veces=r["veces"], primera=r["primera"], ultimo_precio=r["ultimo_precio"], pinturas=r["pinturas"],
                  ultima=min(r["ultima"] or "", ahora()) or None)
     reciente = iso(datetime.now(timezone.utc) - timedelta(hours=30))
-    return origen, externo, vistos_propios(con), reciente
+    drops = {f["catalogo_id"]: f["rareza"] for f in con.execute("SELECT * FROM drops")}
+    return origen, externo, vistos_propios(con), reciente, drops
 
 
-def completar(f, origen, externo, vistos, reciente):
+def completar(f, origen, externo, vistos, reciente, drops=None):
     """Agrega a una fila del catálogo su origen y su paso por la tienda (propio + itemshop.gg)."""
     f["origenes"] = sorted(origen.get(f["id"], []), key=lambda o: (o["origen"] != "Rocket Pass", orden_pase(o["detalle"])))
     ext = externo.get(f["producto_id"])
@@ -854,6 +930,8 @@ def completar(f, origen, externo, vistos, reciente):
         f["pinturas"] = sorted(set(f["pinturas"]) | {r["color"] for r in v["filas"] if r["color"]})
     f["slug_itemshop"] = (ext or {}).get("slug") or ""
     f["categoria"] = categoria_de(f["tipo"])
+    f["drop_rareza"] = (drops or {}).get(f["id"]) or ""
+    f["drops"] = drops_de(f["drop_rareza"])
     return f
 
 
@@ -909,7 +987,7 @@ def catalogo_api(consulta):
     args.append(q)
     with conectar() as con:
         filas = [dict(f) for f in con.execute(sql, args)]
-        origen, externo, vistos, reciente = datos_catalogo(con)
+        origen, externo, vistos, reciente, drops = datos_catalogo(con)
         alertas = alertas_activas(con)
         tipos = [r[0] for r in con.execute("SELECT DISTINCT tipo FROM catalogo ORDER BY tipo")]
         rarezas = [r[0] for r in con.execute("SELECT DISTINCT rareza FROM catalogo ORDER BY rareza")]
@@ -918,7 +996,7 @@ def catalogo_api(consulta):
         total_catalogo = con.execute("SELECT COUNT(*) FROM catalogo").fetchone()[0]
         actualizado = meta(con, "catalogo_actualizado")
         historial_actualizado = meta(con, "historial_externo_actualizado")
-    filas = [completar(f, origen, externo, vistos, reciente) for f in filas]
+    filas = [completar(f, origen, externo, vistos, reciente, drops) for f in filas]
     if filtro_origen == "desconocido":
         filas = [f for f in filas if not f["origenes"]]
     elif filtro_origen:
@@ -941,6 +1019,8 @@ def catalogo_api(consulta):
         filas = [f for f in filas if f["en_tienda"]]
     elif vista == "alerta":
         filas = [f for f in filas if alertas_de(f)]
+    elif vista == "drops":
+        filas = [f for f in filas if f["drops"]]
     filas = ordenar_catalogo(filas, orden)
     total = len(filas)
     if cantidad:
@@ -1070,9 +1150,21 @@ def ficha_api(consulta, consultar_fuentes=True):
             "SELECT llegada, salida, precio, seccion FROM historial_detalle WHERE producto_id=?", (f["producto_id"],))]
         rsn = [dict(r) for r in con.execute("SELECT * FROM historial_rsn WHERE producto_id=?", (f["producto_id"],))]
     f["historial"] = combinar_historial(itemshop, rsn, propio)
-    if f["historial"]:
-        # veces / primera / última vez / último precio con el total combinado
-        h = f["historial"]
+    with conectar() as con:
+        packs = {p["nombre"]: dict(p) for p in con.execute("SELECT * FROM packs")}
+    for o in f["origenes"]:
+        p = packs.get(o["detalle"]) if o["origen"] == "Pack de temporada" else None
+        if p:  # un pack de temporada también es "salir a la venta", aunque se pague con dinero real
+            pintura = next((a["pintura"] for a in json.loads(p["contenido"] or "[]")
+                            if f["id"] in a.get("catalogo_ids", [])), "")
+            f["historial"].append({"llegada": p["lanzado"], "salida": p["retirado"], "precio": None,
+                                   "precio_texto": p["precio"], "seccion": p["nombre"], "pintura": pintura,
+                                   "lote": True, "fuentes": ["pack de temporada"]})
+    f["historial"].sort(key=lambda r: r["llegada"] or "", reverse=True)
+    tienda = [r for r in f["historial"] if "pack de temporada" not in r["fuentes"]]
+    if tienda:
+        # veces / primera / última vez / último precio con el total combinado (solo la tienda de créditos)
+        h = tienda
         f["veces"] = max(f["veces"] or 0, len(h))
         f["primera_vez"] = min(x for x in [r["llegada"] for r in h] + [f["primera_vez"] or "9999"] if x)
         hoy = datetime.now(timezone.utc).strftime("%Y-%m-%d")

@@ -286,3 +286,142 @@ def historial_rlshopnotify(producto_id):
             apariciones.pop()
         vistas.add(clave)
     return apariciones
+
+
+# ---------- Wiki: packs de temporada y drops ----------
+# Packs que se compran con dinero real (Rookie, Veteran, Elite, Rocketeer...): la lista sale de la página
+# "Item Shop" de la wiki, que dice cuáles siguen a la venta; el contenido, de la página de cada pack
+# (la wiki solo lo tiene para algunas temporadas). Drops: la página "Trade-in Items" lista todo lo que
+# puede salir de un drop, con su rareza.
+
+PACK_TEMPORADA = re.compile(r"^Season (\d+) (Rookie|Veteran|Elite|Rocketeer|Starter|Customization) Pack$")
+# Rarezas de la wiki (nombres nuevos y viejos) -> nombre de la escala de RL
+RAREZAS_WIKI = {"sport": "Uncommon", "uncommon": "Uncommon", "special": "Rare", "rare": "Rare",
+                "deluxe": "Very Rare", "very rare": "Very Rare", "import": "Import", "exotic": "Exotic",
+                "black market": "Black Market", "limited": "Limited", "premium": "Premium", "common": "Common"}
+# Drops por rareza (cada uno da un artículo de su rareza o mayor)
+DROPS = [("Sport", "Uncommon"), ("Special", "Rare"), ("Deluxe", "Very Rare"), ("Import", "Import"),
+         ("Exotic", "Exotic"), ("Black Market", "Black Market")]
+SECCIONES_TRADE_IN = {"Body": "Body", "Decal": "Decal", "Goal Explosion": "Goal Explosion",
+                      "Paint Finish": "Paint Finish", "Player Banner": "Player Banner", "Rocket Boost": "Rocket Boost",
+                      "Trail": "Trail", "Wheel": "Wheels", "Topper": "Topper", "Antenna": "Antenna"}
+TIPOS_PACK = {"body": "Body", "vehicle": "Body", "car": "Body", "decal": "Decal", "animated decal": "Decal",
+              "wheels": "Wheels", "wheel": "Wheels", "goal explosion": "Goal Explosion", "rocket boost": "Rocket Boost",
+              "boost": "Rocket Boost", "trail": "Trail", "topper": "Topper", "antenna": "Antenna",
+              "player banner": "Player Banner", "banner": "Player Banner", "avatar border": "Avatar Border",
+              "engine audio": "Engine Audio", "paint finish": "Paint Finish", "player anthem": "Player Anthem"}
+NOMBRES_PINTURA = {p.lower(): p for p in PINTURAS.values()}
+
+
+def limpiar_celda(celda):
+    """'[[Vehicle|Body]]' -> 'Body', '{{rarity|Import}}' -> 'Import', '[[Tygris]]' -> 'Tygris'."""
+    c = re.sub(r"\{\{\s*rarity\s*\|\s*([^}|]+)\}\}", r"\1", celda, flags=re.I)
+    c = re.sub(r"\[\[(?:[^\]|]*\|)?([^\]]*)\]\]", r"\1", c)
+    c = re.sub(r"<[^>]+>|'''?|\{\{[^}]*\}\}", "", c)
+    return html.unescape(c).strip()
+
+
+def filas_tabla(texto):
+    """Celdas de cada fila de las tablas de un wikitexto, sin las celdas que solo tienen una imagen."""
+    filas = []
+    for tabla in re.findall(r"\{\|(.*?)\n\|\}", texto, re.S):
+        for fila in tabla.split("\n|-")[1:]:
+            celdas = []
+            for linea in fila.split("\n"):
+                if not linea.startswith("|") or linea.startswith(("|+", "|}", "|-")):
+                    continue
+                for celda in linea[1:].split("||"):
+                    if re.fullmatch(r"\s*\[\[File:[^\]]*\]\]\s*", celda):
+                        continue
+                    celdas.append(limpiar_celda(celda))
+            if celdas:
+                filas.append(celdas)
+    return filas
+
+
+def separar_pintura(nombre):
+    """'Octane (Crimson)' -> ('Octane', 'Crimson'); 'Batmobile (2016)' queda igual."""
+    m = re.fullmatch(r"(.*?)\s*\(([^)]+)\)", nombre)
+    if m and m[2].lower() in NOMBRES_PINTURA:
+        return m[1], NOMBRES_PINTURA[m[2].lower()]
+    return nombre, ""
+
+
+def lista_packs_temporada(texto_item_shop):
+    """Packs de temporada según la página 'Item Shop': nombre, temporada, tipo, si sigue a la venta e imagen."""
+    inicio = texto_item_shop.find("==Item Packs==")
+    fin = texto_item_shop.find("===Item Bundles===", inicio)
+    packs = {}
+    for linea in texto_item_shop[inicio:fin if fin > 0 else None].split("\n"):
+        m = re.match(r"\s*(?:File:)?([^|\[\]]+?)\s*\|\s*link=([^|]+?)\s*\|(.*)$", linea)
+        if not m or not (t := PACK_TEMPORADA.match(m[2].strip())):
+            continue
+        packs[m[2].strip()] = {"nombre": m[2].strip(), "temporada": int(t[1]), "tipo": t[2], "archivo": m[1].strip(),
+                               "disponible": "no longer available" not in m[3].lower()}
+    return list(packs.values())
+
+
+def contenido_pack(texto):
+    """Artículos de la página de un pack (sin créditos ni títulos) + precio y fechas del recuadro."""
+    articulos = []
+    for celdas in filas_tabla(texto):
+        if len(celdas) < 3:
+            continue
+        nombre, tipo, rareza = celdas[0], celdas[1], celdas[2]
+        tipo_catalogo = TIPOS_PACK.get(tipo.lower())
+        if not tipo_catalogo:
+            continue  # créditos, títulos, etc.
+        nombre, pintura = separar_pintura(nombre)
+        articulos.append({"nombre": nombre, "pintura": pintura, "tipo": tipo_catalogo,
+                          "rareza": RAREZAS_WIKI.get(rareza.lower(), rareza)})
+    dato = lambda clave: (re.search(rf"^\|\s*{clave}\s*=\s*(.*)$", texto, re.M) or [None, ""])[1]
+    fecha_de = lambda v: (re.search(r"\d{4}-\d{2}-\d{2}", v) or [""])[0]
+    precio = re.sub(r"\s*or regional equivalent", " o equivalente regional", limpiar_celda(dato("price")))
+    return articulos, precio, fecha_de(dato("released")), fecha_de(dato("retired"))
+
+
+def packs_temporada():
+    """Packs de temporada con contenido (cuando la wiki lo tiene), imagen, precio y fechas."""
+    texto = textos_wiki(["Item Shop"]).get("Item Shop", "")
+    packs = lista_packs_temporada(texto)
+    if not packs:
+        raise RuntimeError("no encontré la lista de packs en la página 'Item Shop' de la wiki")
+    imagenes = {}
+    archivos = sorted({"File:" + p["archivo"] for p in packs})
+    for i in range(0, len(archivos), 50):
+        d = pedir_wiki(action="query", titles="|".join(archivos[i:i + 50]), prop="imageinfo", iiprop="url")
+        for pag in d.get("query", {}).get("pages", {}).values():
+            if pag.get("imageinfo"):
+                imagenes[pag["title"]] = pag["imageinfo"][0]["url"]
+        for n in d.get("query", {}).get("normalized", []):  # "File:x.jpg" puede volver con otro nombre
+            if n["to"] in imagenes:
+                imagenes[n["from"]] = imagenes[n["to"]]
+    paginas = textos_wiki([p["nombre"] for p in packs])
+    for p in packs:
+        p["imagen"] = imagenes.get("File:" + p["archivo"], "")
+        p["contenido"], p["precio"], p["lanzado"], p["retirado"] = contenido_pack(paginas.get(p["nombre"], ""))
+        p["url"] = "https://rocketleague.fandom.com/wiki/" + urllib.parse.quote(p["nombre"].replace(" ", "_"))
+    return packs
+
+
+def articulos_drops(texto):
+    """Lo que puede salir de un drop, según 'Trade-in Items': {nombre, tipo, rareza}."""
+    resultado = []
+    secciones = re.split(r"^==\s*([^=]+?) Items\s*==\s*$", texto, flags=re.M)
+    for titulo, cuerpo in zip(secciones[1::2], secciones[2::2]):
+        tipo = SECCIONES_TRADE_IN.get(titulo.strip())
+        if not tipo:
+            continue
+        for celdas in filas_tabla(cuerpo):
+            rareza = next((RAREZAS_WIKI[c.lower()] for c in celdas[1:] if c.lower() in RAREZAS_WIKI), "")
+            if not celdas[0] or not rareza:
+                continue
+            nombre = celdas[0]
+            if tipo == "Decal" and len(celdas) >= 4 and celdas[1].lower() not in ("universal", "all", "any", ""):
+                nombre = f"{celdas[1]}: {nombre}"  # como en la tienda: "Breakout: Chainsaw"
+            resultado.append({"nombre": nombre, "tipo": tipo, "rareza": rareza})
+    return resultado
+
+
+def drops_wiki():
+    return articulos_drops(textos_wiki(["Trade-in Items"]).get("Trade-in Items", ""))

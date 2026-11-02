@@ -279,6 +279,7 @@ async function catalogoNube(p) {
   else if (vista === "visto") filas = filas.filter((f) => f.ultima_vez);
   else if (vista === "hoy") filas = filas.filter((f) => f.en_tienda);
   else if (vista === "alerta") filas = filas.filter((f) => alertasDeCatalogo(f, alertas).length);
+  else if (vista === "drops") filas = filas.filter((f) => f.drops && f.drops.length);
   filas = ordenarCatalogo(filas, p.get("orden") || "");
   const total = filas.length;
   let pagina = Math.max(0, parseInt(p.get("pagina"), 10) || 0);
