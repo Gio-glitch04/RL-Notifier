@@ -148,7 +148,7 @@ def numero(precio):
 
 
 def articulo_rl(nombre, tipo, color, rareza, precio, seccion, hasta, url,
-                imagen="", color_hex="", rareza_color="", mezcla=""):
+                imagen="", color_hex="", rareza_color="", mezcla="", contenido=None):
     # El id no depende de la página, así cambiar de fuente no repite avisos.
     clave = f"{nombre}|{color}|{precio}".lower()
     return {
@@ -170,6 +170,7 @@ def articulo_rl(nombre, tipo, color, rareza, precio, seccion, hasta, url,
         "mezcla": mezcla,  # "screen" = imagen con fondo negro que se funde con el fondo
         "precio_num": numero(precio),
         "moneda": "créditos",
+        "contenido": contenido or [],  # artículos de un lote
     }
 
 
@@ -199,8 +200,23 @@ def rl_desde_itemshop():
                                          imagen=texto(c.get("image")) or texto(c.get("art")),
                                          color_hex=texto(pintura.get("color")),
                                          rareza_color=texto(c.get("rarityColor")),
-                                         mezcla=texto(c.get("blend"))))
+                                         mezcla=texto(c.get("blend")),
+                                         contenido=contenido_lote(c)))
     return articulos
+
+
+def contenido_lote(c):
+    """Lo que trae un lote (bundle), si itemshop.gg lo dice."""
+    resultado = []
+    for x in c.get("contents") or []:
+        if not isinstance(x, dict) or not texto(x.get("name")):
+            continue
+        pintura = x.get("paint") if isinstance(x.get("paint"), dict) else {}
+        resultado.append({"nombre": texto(x.get("name")), "tipo": texto(x.get("kind")),
+                          "rareza": texto(x.get("rarityName")), "rareza_color": texto(x.get("rarityColor")),
+                          "imagen": texto(x.get("image")), "color": texto(pintura.get("name")),
+                          "color_hex": texto(pintura.get("color"))})
+    return resultado
 
 
 def rl_desde_portal():

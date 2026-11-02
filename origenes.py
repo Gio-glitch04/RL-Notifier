@@ -236,6 +236,26 @@ def origenes_wiki():
         tipo_pagina = TIPOS_SUBPAGINA.get(titulo.split("/")[0], "")
         for a in articulos_en_texto(texto):
             resultado.append({**a, "tipo": tipo_pagina or a["tipo"], "origen": clase[0], "detalle": clase[1]})
+    # 3) Recompensas de torneo: página "Tournaments", una pestaña por temporada ("|-|S24=")
+    for a in recompensas_torneo(textos_wiki(["Tournaments"]).get("Tournaments", "")):
+        resultado.append(a)
+    return resultado
+
+
+def recompensas_torneo(texto):
+    """Serie Accolade de cada temporada (se canjea con créditos de torneo): {nombre, tipo, origen, detalle, nivel}."""
+    m = re.search(r"^==\s*Tournament Rewards\s*==\s*$", texto, re.M)
+    if not m:
+        return []
+    fin = re.search(r"^==[^=].*==\s*$", texto[m.end():], re.M)
+    texto = texto[m.end():m.end() + fin.start()] if fin else texto[m.end():]
+    resultado = []
+    pestanas = re.split(r"^\|-\|\s*S(\d+)\s*=\s*$", texto, flags=re.M)
+    for temporada, cuerpo in zip(pestanas[1::2], pestanas[2::2]):
+        serie = re.search(r"Accolade\s+([IVXLC]+)\s+Series", cuerpo)
+        detalle = f"Temporada {temporada}" + (f" (Accolade {serie[1]})" if serie else "")
+        for a in articulos_en_texto(cuerpo):
+            resultado.append({**a, "nivel": None, "origen": "Torneos", "detalle": detalle})
     return resultado
 
 

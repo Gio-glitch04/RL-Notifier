@@ -15,6 +15,7 @@ Uso (lo llama .github/workflows/nube.yml):
 Variables de entorno: DISCORD_WEBHOOK (secreto de GitHub), GITHUB_REPOSITORY.
 """
 
+import hashlib
 import json
 import os
 import re
@@ -219,6 +220,12 @@ def exportar(config):
         shutil.rmtree(SITIO)
     shutil.copytree(CARPETA / "web", SITIO)
     (SITIO / ".nojekyll").write_text("", encoding="utf-8")
+    # versión en la dirección de cada archivo, para que el navegador no siga usando el app.js viejo
+    pagina = (SITIO / "index.html").read_text(encoding="utf-8")
+    for archivo in ("estilos.css", "nube.js", "app.js"):
+        version = hashlib.sha1((SITIO / archivo).read_bytes()).hexdigest()[:10]
+        pagina = pagina.replace(f'"{archivo}"', f'"{archivo}?v={version}"')
+    (SITIO / "index.html").write_text(pagina, encoding="utf-8")
     salida = SITIO / "datos"
 
     estado = n.estado_api()
