@@ -119,5 +119,6 @@
 {"id":1793635147674,"nombre":"Saptarishi","color":"","tipo":"Ruedas","rareza":"","tienda":"","precio_max":null,"activa":1,"exacto":1,"creada":"2026-11-02T15:59:07Z"},
 {"id":1793635186502,"nombre":"Lobo","color":"","tipo":"Ruedas","rareza":"","tienda":"","precio_max":null,"activa":1,"exacto":1,"creada":"2026-11-02T15:59:46Z"},
 {"id":1793653653883,"nombre":"Camo","color":"","tipo":"Ruedas","rareza":"","tienda":"","precio_max":null,"activa":1,"exacto":1,"creada":"2026-11-02T21:07:33Z"},
-{"id":1793741144691,"nombre":"Spacerocker","color":"","tipo":"Ruedas","rareza":"","tienda":"","precio_max":null,"activa":1,"exacto":1,"creada":"2026-11-03T21:25:44Z"}
+{"id":1793741144691,"nombre":"Spacerocker","color":"","tipo":"Ruedas","rareza":"","tienda":"","precio_max":null,"activa":1,"exacto":1,"creada":"2026-11-03T21:25:44Z"},
+{"id":1793760019329,"nombre":"DigDog","color":"","tipo":"Ruedas","rareza":"","tienda":"","precio_max":null,"activa":1,"exacto":1,"creada":"2026-11-04T02:40:19Z"}
 ]
