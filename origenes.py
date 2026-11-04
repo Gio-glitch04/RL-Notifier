@@ -361,8 +361,8 @@ def filas_tabla(texto):
 
 
 def separar_pintura(nombre):
-    """'Octane (Crimson)' -> ('Octane', 'Crimson'); 'Batmobile (2016)' queda igual."""
-    m = re.fullmatch(r"(.*?)\s*\(([^)]+)\)", nombre)
+    """'Octane (Crimson)' -> ('Octane', 'Crimson'); 'Fennec (Purple Painted)' también; 'Batmobile (2016)' queda igual."""
+    m = re.fullmatch(r"(.*?)\s*\(([^)]+?)(?:\s+Painted)?\)", nombre)
     if m and m[2].lower() in NOMBRES_PINTURA:
         return m[1], NOMBRES_PINTURA[m[2].lower()]
     return nombre, ""
@@ -401,7 +401,7 @@ def contenido_pack(texto):
     return articulos, precio, fecha_de(dato("released")), fecha_de(dato("retired"))
 
 
-def packs_temporada():
+def packs_temporada(ids_xbox=()):
     """Packs de temporada con contenido (cuando la wiki lo tiene), imagen, precio y fechas."""
     texto = textos_wiki(["Item Shop"]).get("Item Shop", "")
     packs = lista_packs_temporada(texto)
@@ -423,27 +423,29 @@ def packs_temporada():
         p["contenido"], p["precio"], p["lanzado"], p["retirado"] = contenido_pack(paginas.get(p["nombre"], ""))
         p["url"] = "https://rocketleague.fandom.com/wiki/" + urllib.parse.quote(p["nombre"].replace(" ", "_"))
         p["tiendas"], p["creditos"] = [], 0
-    return sumar_tiendas(packs)
+    return sumar_tiendas(packs, ids_xbox)
 
 
-def sumar_tiendas(packs):
-    """Completa los packs de la wiki con lo que dicen Xbox y Epic (contenido, precio, fecha, imagen)."""
+def sumar_tiendas(packs, ids_xbox=()):
+    """Completa los packs de la wiki con lo que dicen Xbox y Epic (contenido, precio, fecha, imagen).
+    Xbox también da los packs retirados cuyo id se conoce (lista fija + los vistos antes)."""
     por_nombre = {p["nombre"]: p for p in packs}
-    for lector in (packs_xbox, packs_epic):
+    for lector in (lambda: packs_xbox(ids_xbox), packs_epic):
         try:
             de_tienda = lector()
         except Exception as err:  # una tienda caída no frena al resto
-            print(f"No pude leer {lector.__name__}: {err}")
+            print(f"No pude leer una tienda ({'Xbox' if lector is not packs_epic else 'Epic'}): {err}")
             continue
         for t in de_tienda:
             p = por_nombre.get(t["nombre"])
             if p is None:
                 m = PACK_TEMPORADA.match(t["nombre"])
                 p = por_nombre[t["nombre"]] = {
-                    "nombre": t["nombre"], "temporada": int(m[1]), "tipo": m[2], "archivo": "", "imagen": "",
+                    "nombre": t["nombre"], "temporada": int(m[1]), "tipo": m[2], "archivo": "", "imagen": "", "disponible": False,
                     "contenido": [], "precio": "", "lanzado": "", "retirado": "", "tiendas": [], "creditos": 0,
                     "url": "https://rocketleague.fandom.com/wiki/" + urllib.parse.quote(t["nombre"].replace(" ", "_"))}
-            p["disponible"] = True  # si una tienda lo vende, está a la venta
+            if t["a_la_venta"]:
+                p["disponible"] = True  # si una tienda lo vende hoy, está a la venta
             if len(t["contenido"]) > len(p["contenido"]):
                 p["contenido"] = t["contenido"]
             p["imagen"] = p["imagen"] or t["imagen"]
@@ -451,7 +453,8 @@ def sumar_tiendas(packs):
             p["creditos"] = p["creditos"] or t["creditos"]
             if not p["precio"] or "£" in p["precio"]:
                 p["precio"] = t["precio"] or p["precio"]
-            p["tiendas"].append({"tienda": t["tienda"], "url": t["url_tienda"], "precio": t["precio"]})
+            p["tiendas"].append({"tienda": t["tienda"], "url": t["url_tienda"], "precio": t["precio"],
+                                 "a_la_venta": t["a_la_venta"], "id": t.get("id_xbox", "")})
     return list(por_nombre.values())
 
 
@@ -463,6 +466,17 @@ TIPO_EN_TEXTO = re.compile(
     r"Antennas?|Trails?|Engine Audios?|Player Banners?|Banners?|Avatar Borders?|Player Anthems?|Paint Finish(?:es)?)\b"
     r"(?:\s*\(([^)]+)\))?", re.I)
 RL_XBOX = "C125W9BG2K0V"
+# Ids de Xbox de packs de temporada viejos, sacados de copias de sus páginas en el archivo de Internet (web.archive.org).
+# La tienda ya no los muestra, pero displaycatalog sigue dando sus datos. Temporadas 6 a 22; los nuevos se guardan solos.
+IDS_XBOX_PACKS = (
+    "9N591HLCHLVR", "9NDS8ZMZDQCH", "9N2F00DJX436", "9P8PRCP3Z0L1", "9NWD2HKN2KM2", "9PNP32FX9547",
+    "9NB4HSF6DG4K", "9MT7VTCLCSW0", "9N6QG707P864", "9NFR7BFKDL6W", "9PHJ967ZRR3S", "9N2LCJ3GTHC0",
+    "9NZX42NZCFKP", "9PK15G48V8MG", "9P3FNQHLPBGF", "9P0QV80WRZKS", "9N2QXJP7W67C", "9N79604L767Q",
+    "9NDP1RZ0852C", "9NKWP9BVFLMD", "9PKM8TT53J0R", "9PN9MN29XKZH", "9PNJ9HBD9TLR", "9NKM2SJQ0C50",
+    "9PFX02RTQVLQ", "9N0KQKGJ3XZX", "9PH9XL0H6DQJ", "9N4QWGJV57V5", "9NWWKCG7VCHG", "9PF9HKMHJ1BZ",
+    "9PLZTRJL436J", "9NSC1B6PC4ZN", "9P1F1LQH18DL", "9P3PDV3MWNHT", "9PLXC9J32NVF", "9N1ZPVPMCKD9",
+    "9PG6FFPG8BF3",
+)
 URL_XBOX_RL = "https://www.xbox.com/en-US/games/store/rocket-league/" + RL_XBOX
 URL_XBOX_PRODUCTOS = "https://displaycatalog.mp.microsoft.com/v7.0/products?bigIds={}&market=US&languages=en-US"
 URL_EPIC_GRAPHQL = "https://store.epicgames.com/graphql"
@@ -481,24 +495,34 @@ def tipo_singular(palabra):
 def contenido_descripcion(texto):
     """Artículos ({nombre, pintura, tipo, rareza}) y créditos de la descripción de un pack en Xbox o Epic."""
     frase = (texto or "").split("\n")[0]
+    if not re.match(r"\s*Unlock\b", frase):
+        return [], 0  # descripciones viejas en prosa ("Make a statement in the Arena..."): no se pueden leer bien
     creditos = re.search(r"([\d.,]+) Credits", frase)
     frase = re.sub(r"^\s*Unlock\s+(?:the\s+)?", "", frase)
-    frase = re.split(r"\s+in the Season \d+|[!.]\s|You'll also get|\band [\d.,]+ Credits", frase)[0]
-    articulos, desde = [], 0
-    for m in TIPO_EN_TEXTO.finditer(frase):
-        tipo = tipo_singular(m[1])
-        trozo = frase[desde:m.start()]
-        desde = m.end()
-        nombres = [n.strip() for n in re.split(r",|\band\b|&", trozo)]
-        nombres = [re.sub(r"^(?:the|an?)\s+", "", n, flags=re.I).strip() for n in nombres]
-        nombres = [n for n in nombres if n]
-        if not tipo or not nombres:
-            continue
-        for i, n in enumerate(nombres):
-            nombre, pintura = separar_pintura(n)
-            if not pintura and m[2] and i == len(nombres) - 1:
-                pintura = NOMBRES_PINTURA.get(m[2].strip().lower(), "")
-            articulos.append({"nombre": nombre, "pintura": pintura, "tipo": tipo, "rareza": ""})
+    # lo principal y lo que viene después de "You'll also get" (más artículos y los créditos)
+    partes = re.split(r"You'll also get(?: the)?", frase, maxsplit=1)
+    trozos = [re.split(r"\s+in the S(?:eason)?\s*\d+|[!.](?:\s|$)", parte)[0] for parte in partes]
+    trozos = [re.sub(r"(?:,\s*|\s+and\s+|^\s*)[\d.,]+ Credits(?:\s+and(?: the)?)?", "", t) for t in trozos]
+    articulos = []
+    for trozo_frase in trozos:
+        desde = 0
+        for m in TIPO_EN_TEXTO.finditer(trozo_frase):
+            tipo = tipo_singular(m[1])
+            trozo = trozo_frase[desde:m.start()]
+            desde = m.end()
+            nombres = [n.strip() for n in re.split(r",|\band\b", trozo)]
+            nombres = [re.sub(r"^(?:the|an?)\s+", "", n, flags=re.I).strip() for n in nombres]
+            nombres = [n for n in nombres if n]
+            if not tipo or not nombres:
+                continue
+            pintura_final = NOMBRES_PINTURA.get(re.sub(r"\s+Painted$", "", (m[2] or "").strip()).lower(), "")
+            for i, n in enumerate(nombres):
+                nombre, pintura = separar_pintura(n)
+                # "Interstellar Black Market Decal": la rareza no es parte del nombre
+                nombre = re.sub(r"\s+(?:Black Market|Exotic|Import|Limited|Very Rare)$", "", nombre)
+                if not pintura and i == len(nombres) - 1:
+                    pintura = pintura_final
+                articulos.append({"nombre": nombre, "pintura": pintura, "tipo": tipo, "rareza": ""})
     return articulos, int(re.sub(r"[.,]", "", creditos[1])) if creditos else 0
 
 
@@ -508,15 +532,22 @@ def nombre_pack_tienda(titulo):
     return f"Season {m[1]} {m[2].title()} Pack" if m else ""
 
 
-def packs_xbox():
-    """Packs de temporada que vende la tienda de Xbox (complementos de Rocket League)."""
+def ids_xbox_a_la_venta():
+    """Ids de los complementos que la página de Rocket League en Xbox muestra hoy."""
     pagina = descargar(URL_XBOX_RL, NAVEGADOR)
     m = re.search(r"window\.__PRELOADED_STATE__\s*=\s*", pagina)
     if not m:
         raise RuntimeError("no encontré los datos de la página de Xbox")
     datos, _ = json.JSONDecoder().raw_decode(pagina, m.end())
     canal = datos.get("core2", {}).get("channels", {}).get("channelData", {}).get(f"PRODUCTADDONS_{RL_XBOX}", {})
-    ids = [p["productId"] for p in canal.get("data", {}).get("products", []) if p.get("productId")]
+    return [p["productId"] for p in canal.get("data", {}).get("products", []) if p.get("productId")]
+
+
+def packs_xbox(ids_guardados=()):
+    """Packs de temporada de Xbox: los que vende hoy y los retirados cuyo id se conoce.
+    displaycatalog sigue dando los datos de un producto retirado si se sabe su id."""
+    a_la_venta = ids_xbox_a_la_venta()
+    ids = list(dict.fromkeys(a_la_venta + list(ids_guardados) + list(IDS_XBOX_PACKS)))
     resultado = []
     for i in range(0, len(ids), 20):
         productos = json.loads(descargar(URL_XBOX_PRODUCTOS.format(",".join(ids[i:i + 20])))).get("Products", [])
@@ -537,7 +568,8 @@ def packs_xbox():
                 "imagen": ("https:" + imagen) if imagen.startswith("//") else imagen,
                 "precio": f"{precio:.2f} US$".replace(".", ",") if precio else "",
                 "lanzado": ((p.get("MarketProperties") or [{}])[0].get("OriginalReleaseDate") or "")[:10],
-                "tienda": "Xbox", "url_tienda": f"https://www.xbox.com/es-ES/games/store/x/{p.get('ProductId')}"})
+                "tienda": "Xbox", "url_tienda": f"https://www.xbox.com/es-ES/games/store/x/{p.get('ProductId')}",
+                "id_xbox": p.get("ProductId"), "a_la_venta": p.get("ProductId") in a_la_venta})
     return resultado
 
 
@@ -569,7 +601,8 @@ def packs_epic():
                 "nombre": nombre, "contenido": contenido, "creditos": creditos,
                 "imagen": imagenes.get("OfferImageWide") or imagenes.get("Thumbnail") or "",
                 "precio": precio if precio not in ("0", "") else "", "lanzado": (e.get("releaseDate") or "")[:10],
-                "tienda": "Epic Games", "url_tienda": f"https://store.epicgames.com/es-ES/p/{e.get('urlSlug')}"})
+                "tienda": "Epic Games", "url_tienda": f"https://store.epicgames.com/es-ES/p/{e.get('urlSlug')}",
+                "a_la_venta": True})
     return resultado
 
 

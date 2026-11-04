@@ -663,7 +663,9 @@ def ids_articulo_pack(indice, a, auto=""):
 
 def actualizar_packs_drops():
     """Packs de temporada (contenido y si siguen a la venta) y qué artículos salen en drops. Semanal."""
-    packs = origenes.packs_temporada()
+    with conectar() as con:
+        ids_xbox = json.loads(meta(con, "ids_xbox_packs") or "[]")
+    packs = origenes.packs_temporada(ids_xbox)
     drops = origenes.drops_wiki()
     inicios = origenes.inicios_temporada()
     momento = ahora()
@@ -693,6 +695,9 @@ def actualizar_packs_drops():
             con.execute("DELETE FROM drops")
             con.executemany("INSERT INTO drops VALUES (?,?)", list(filas.items()))
         meta(con, "packs_drops_actualizado", momento)
+        # ids de Xbox vistos: cuando un pack se retira de la tienda, displaycatalog lo sigue dando por su id
+        vistos_xbox = {t["id"] for p in packs for t in p.get("tiendas") or [] if t.get("id")}
+        meta(con, "ids_xbox_packs", json.dumps(sorted(set(ids_xbox) | vistos_xbox)))
         if inicios:
             meta(con, "inicios_temporada", json.dumps(inicios))
     log(f"Packs de temporada: {len(packs)} ({sum(p['disponible'] for p in packs)} a la venta, "

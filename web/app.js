@@ -222,7 +222,7 @@ function tarjetaPack(p) {
       ${contenido}
     </div>
     <div class="botones-tarjeta">
-      ${(p.tiendas || []).filter((t) => urlSegura(t.url)).map((t) => `<a class="btn btn-chico" href="${esc(t.url)}" target="_blank" rel="noopener noreferrer">${esc(t.tienda)} ↗</a>`).join("")}
+      ${(p.tiendas || []).filter((t) => urlSegura(t.url)).map((t) => `<a class="btn btn-chico" href="${esc(t.url)}" target="_blank" rel="noopener noreferrer" title="${t.a_la_venta === false ? "Ya no se vende" : "A la venta"}">${esc(t.tienda)}${t.a_la_venta === false ? " (retirado)" : ""} ↗</a>`).join("")}
       ${urlSegura(p.url) ? `<a class="btn btn-chico" href="${esc(p.url)}" target="_blank" rel="noopener noreferrer">Wiki ↗</a>` : ""}
     </div>
   </article>`;
