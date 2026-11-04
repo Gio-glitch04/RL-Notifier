@@ -236,7 +236,6 @@ a.alerta-titulo:hover { text-decoration: underline; }
 .lote { margin-top: 18px; padding: 14px; border: 1px solid #232a38; border-radius: 12px; background: #0f131c; }
 .lote-cabecera { display: flex; align-items: baseline; gap: 10px; flex-wrap: wrap; margin-bottom: 10px; }
 .lote-cabecera h3 { margin: 0; font-size: 15px; }
-.lote-cuerpo { display: grid; grid-template-columns: 220px 1fr; gap: 16px; align-items: start; }
-.lote-lista { display: grid; grid-template-columns: repeat(auto-fill, minmax(220px, 1fr)); gap: 8px; margin: 0; }
-.lote-lista .pintura { font-weight: 400; font-size: 11px; }
-@media (max-width: 600px) { .lote-cuerpo { grid-template-columns: 1fr; } .lote-tarjeta { max-width: 260px; } }
+.etiqueta.en-lote { background: #1e2635; color: #cfd6e4; }
+.tarjeta-contenido h3[data-ficha], .tarjeta-contenido .tarjeta-img[data-ficha] { cursor: pointer; }
+.salida { font-size: 12px; color: var(--sutil); }

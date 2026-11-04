@@ -89,7 +89,8 @@ SINONIMOS_CATEGORIA = {
 # Orden real de rarezas de RL. Las especiales (Limited, Premium, Legacy) van siempre detrás.
 ESCALA_RAREZAS = ["Common", "Uncommon", "Rare", "Very Rare", "Import", "Exotic", "Black Market"]
 RAREZAS_ESPECIALES = ["Limited", "Premium", "Legacy"]
-ORDENES_CATALOGO = ("nombre-asc", "nombre-desc", "rareza-asc", "rareza-desc", "precio-asc", "precio-desc")
+ORDENES_CATALOGO = ("nombre-asc", "nombre-desc", "rareza-asc", "rareza-desc", "precio-asc", "precio-desc",
+                    "temporada-asc", "temporada-desc", "salida-asc", "salida-desc")
 DIAS_ENTRE_CATALOGOS = 7
 HORAS_ENTRE_HISTORIALES = 20  # resumen de itemshop.gg: 1 pedido por día
 HORAS_CACHE_FICHA = 12  # historial detallado de un artículo (al abrir su ficha)
@@ -173,7 +174,8 @@ CREATE TABLE IF NOT EXISTS avisos (
 );
 CREATE TABLE IF NOT EXISTS packs (
     nombre TEXT PRIMARY KEY, temporada INTEGER, tipo TEXT, disponible INTEGER, imagen TEXT, precio TEXT,
-    lanzado TEXT, retirado TEXT, url TEXT, contenido TEXT, actualizado TEXT
+    lanzado TEXT, retirado TEXT, url TEXT, contenido TEXT, actualizado TEXT, tiendas TEXT DEFAULT '',
+    creditos INTEGER DEFAULT 0
 );
 CREATE TABLE IF NOT EXISTS drops (catalogo_id TEXT PRIMARY KEY, rareza TEXT);
 CREATE TABLE IF NOT EXISTS meta (clave TEXT PRIMARY KEY, valor TEXT);
@@ -201,6 +203,10 @@ def iniciar_db(config):
         for col, tipo in (("mezcla", "TEXT DEFAULT ''"), ("orden", "INTEGER DEFAULT 0"), ("contenido", "TEXT DEFAULT ''")):
             if col not in columnas:  # bases creadas con una versión anterior
                 con.execute(f"ALTER TABLE articulos ADD COLUMN {col} {tipo}")
+        columnas_packs = {f["name"] for f in con.execute("PRAGMA table_info(packs)")}
+        for col, tipo in (("tiendas", "TEXT DEFAULT ''"), ("creditos", "INTEGER DEFAULT 0")):
+            if col not in columnas_packs:
+                con.execute(f"ALTER TABLE packs ADD COLUMN {col} {tipo}")
         if "exacto" not in {f["name"] for f in con.execute("PRAGMA table_info(alertas)")}:
             con.execute("ALTER TABLE alertas ADD COLUMN exacto INTEGER DEFAULT 0")
         for f in con.execute("SELECT id, tipo FROM alertas WHERE tipo<>''").fetchall():
@@ -642,10 +648,24 @@ def ids_por_nombre(indice, tipo, nombre):
     return indice.get((tipo, origenes.slug(nombre))) or set()
 
 
+def ids_articulo_pack(indice, a, auto=""):
+    """Como ids_por_nombre, pero una calcomanía 'Shodo' de un pack con el Fennec también busca 'Fennec: Shodo'."""
+    ids = ids_por_nombre(indice, a["tipo"], a["nombre"])
+    if not ids and a["tipo"] == "Decal" and auto and ":" not in a["nombre"]:
+        ids = ids_por_nombre(indice, "Decal", f"{auto}: {a['nombre']}")
+    if not ids and a["tipo"] == "Decal":  # calcomanía de un solo auto: la única clave que termina en el nombre
+        fin = "-" + origenes.slug(a["nombre"])
+        candidatos = {c: d for (t, c), d in indice.items() if t == "Decal" and c.endswith(fin)}
+        if len(candidatos) == 1:
+            ids = next(iter(candidatos.values()))
+    return ids
+
+
 def actualizar_packs_drops():
     """Packs de temporada (contenido y si siguen a la venta) y qué artículos salen en drops. Semanal."""
     packs = origenes.packs_temporada()
     drops = origenes.drops_wiki()
+    inicios = origenes.inicios_temporada()
     momento = ahora()
     with conectar() as con:
         indice = indice_catalogo(con)
@@ -653,15 +673,18 @@ def actualizar_packs_drops():
         con.execute("DELETE FROM origenes WHERE fuente='wiki (packs)'")
         sin_unir = 0
         for p in packs:
+            auto = next((a["nombre"] for a in p["contenido"] if a["tipo"] == "Body"), "")
             for a in p["contenido"]:
-                a["catalogo_ids"] = sorted(ids_por_nombre(indice, a["tipo"], a["nombre"]))
+                a["catalogo_ids"] = sorted(ids_articulo_pack(indice, a, auto))
                 sin_unir += not a["catalogo_ids"]
                 for cid in a["catalogo_ids"]:
                     con.execute("INSERT OR REPLACE INTO origenes VALUES (?,?,?,?,?)",
                                 (cid, "Pack de temporada", p["nombre"], None, "wiki (packs)"))
-            con.execute("INSERT INTO packs VALUES (?,?,?,?,?,?,?,?,?,?,?)", (
+            con.execute("INSERT INTO packs (nombre, temporada, tipo, disponible, imagen, precio, lanzado, retirado, url, "
+                        "contenido, actualizado, tiendas, creditos) VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?)", (
                 p["nombre"], p["temporada"], p["tipo"], int(p["disponible"]), p["imagen"], p["precio"], p["lanzado"],
-                p["retirado"], p["url"], json.dumps(p["contenido"], ensure_ascii=False), momento))
+                p["retirado"], p["url"], json.dumps(p["contenido"], ensure_ascii=False), momento,
+                json.dumps(p.get("tiendas") or [], ensure_ascii=False), p.get("creditos") or 0))
         filas = {}
         for d in drops:
             for cid in ids_por_nombre(indice, d["tipo"], d["nombre"]):
@@ -670,6 +693,8 @@ def actualizar_packs_drops():
             con.execute("DELETE FROM drops")
             con.executemany("INSERT INTO drops VALUES (?,?)", list(filas.items()))
         meta(con, "packs_drops_actualizado", momento)
+        if inicios:
+            meta(con, "inicios_temporada", json.dumps(inicios))
     log(f"Packs de temporada: {len(packs)} ({sum(p['disponible'] for p in packs)} a la venta, "
         f"{sum(bool(p['contenido']) for p in packs)} con contenido, {sin_unir} artículos sin unir). "
         f"Drops: {len(filas)} artículos del catálogo de {len(drops)} en la wiki")
@@ -690,15 +715,17 @@ def drops_de(rareza):
 def packs_api(con):
     """Packs de temporada a la venta, con cada artículo unido al catálogo (imagen y ficha)."""
     filas = [dict(f) for f in con.execute("SELECT * FROM packs WHERE disponible=1")]
-    catalogo = {f["id"]: dict(f) for f in con.execute("SELECT id, imagen, rareza_color FROM catalogo")}
+    catalogo = {f["id"]: dict(f) for f in con.execute("SELECT id, imagen, rareza, rareza_color FROM catalogo")}
     orden_tipo = {"Rookie": 0, "Veteran": 1, "Elite": 2, "Rocketeer": 3}
     for p in filas:
         p["contenido"] = json.loads(p["contenido"] or "[]")
+        p["tiendas"] = json.loads(p.get("tiendas") or "[]")
         for a in p["contenido"]:
             cat = next((catalogo[c] for c in a.get("catalogo_ids", []) if c in catalogo), None)
             a["catalogo_id"] = cat["id"] if cat else ""
             a["imagen"] = cat["imagen"] if cat else ""
             a["rareza_color"] = cat["rareza_color"] if cat else ""
+            a["rareza"] = a.get("rareza") or (cat["rareza"] if cat else "")
             a.pop("catalogo_ids", None)
     return sorted(filas, key=lambda p: (-p["temporada"], orden_tipo.get(p["tipo"], 9)))
 
@@ -926,10 +953,37 @@ def datos_catalogo(con):
                  ultima=min(r["ultima"] or "", ahora()) or None)
     reciente = iso(datetime.now(timezone.utc) - timedelta(hours=30))
     drops = {f["catalogo_id"]: f["rareza"] for f in con.execute("SELECT * FROM drops")}
-    return origen, externo, vistos_propios(con), reciente, drops
+    fechas = {"temporadas": json.loads(meta(con, "inicios_temporada") or "{}"),
+              "packs": {f["nombre"]: f["lanzado"] for f in con.execute("SELECT nombre, lanzado FROM packs")}}
+    return origen, externo, vistos_propios(con), reciente, drops, fechas
 
 
-def completar(f, origen, externo, vistos, reciente, drops=None):
+def temporada_de(o):
+    """Temporada de un origen: (orden, texto, clave de su fecha de inicio); None si no tiene.
+    Los Rocket Pass de antes del free-to-play (1 a 9) van antes de la temporada 1: orden -9 a -1."""
+    d = o.get("detalle") or ""
+    if o["origen"] == "Rocket Pass" and (m := re.match(r"Rocket Pass (\d+)", d)):
+        return int(m[1]) - 10, f"Rocket Pass {m[1]}", f"RP {m[1]}"
+    if m := re.match(r"(?:Temporada(?: competitiva)?|Season) (\d+)", d):
+        return int(m[1]), f"Temporada {m[1]}", f"T {m[1]}"
+    return None
+
+
+def temporada_y_salida(f, fechas):
+    """Primera temporada en la que salió el artículo y fecha de salida más temprana que se conoce."""
+    temporadas = [t for t in (temporada_de(o) for o in f["origenes"]) if t]
+    inicios = (fechas or {}).get("temporadas", {})
+    packs = (fechas or {}).get("packs", {})
+    candidatas = [inicios.get(t[2]) for t in temporadas]
+    candidatas += [packs.get(o["detalle"]) for o in f["origenes"] if o["origen"] == "Pack de temporada"]
+    candidatas.append((f.get("primera_vez") or "")[:10])
+    primera = min(temporadas, key=lambda t: (t[0], inicios.get(t[2]) or "")) if temporadas else None
+    f["temporada"] = primera[0] if primera else None
+    f["temporada_texto"] = primera[1] if primera else ""
+    f["salida"] = min((c[:10] for c in candidatas if c), default=None)
+
+
+def completar(f, origen, externo, vistos, reciente, drops=None, fechas=None):
     """Agrega a una fila del catálogo su origen y su paso por la tienda (propio + itemshop.gg)."""
     f["origenes"] = sorted(origen.get(f["id"], []), key=lambda o: (o["origen"] != "Rocket Pass", orden_pase(o["detalle"])))
     ext = externo.get(f["producto_id"])
@@ -951,6 +1005,7 @@ def completar(f, origen, externo, vistos, reciente, drops=None):
     f["categoria"] = categoria_de(f["tipo"])
     f["drop_rareza"] = (drops or {}).get(f["id"]) or ""
     f["drops"] = drops_de(f["drop_rareza"])
+    temporada_y_salida(f, fechas)
     return f
 
 
@@ -963,6 +1018,11 @@ def ordenar_catalogo(filas, orden):
     filas = sorted(filas, key=nombre)  # desempate estable: por nombre
     if campo == "nombre":
         return sorted(filas, key=nombre, reverse=sentido == "desc")
+    if campo in ("temporada", "salida"):  # sin dato, siempre al final
+        con_dato = [f for f in filas if f.get(campo) is not None]
+        sin_dato = [f for f in filas if f.get(campo) is None]
+        clave = (lambda f: (f["temporada"], f.get("salida") or "")) if campo == "temporada" else (lambda f: f["salida"])
+        return sorted(con_dato, key=clave, reverse=sentido == "desc") + sin_dato
     if campo == "rareza":
         def puesto(f):
             r = f.get("rareza") or ""
@@ -1006,7 +1066,7 @@ def catalogo_api(consulta):
     args.append(q)
     with conectar() as con:
         filas = [dict(f) for f in con.execute(sql, args)]
-        origen, externo, vistos, reciente, drops = datos_catalogo(con)
+        origen, externo, vistos, reciente, drops, fechas = datos_catalogo(con)
         alertas = alertas_activas(con)
         tipos = [r[0] for r in con.execute("SELECT DISTINCT tipo FROM catalogo ORDER BY tipo")]
         rarezas = [r[0] for r in con.execute("SELECT DISTINCT rareza FROM catalogo ORDER BY rareza")]
@@ -1015,7 +1075,7 @@ def catalogo_api(consulta):
         total_catalogo = con.execute("SELECT COUNT(*) FROM catalogo").fetchone()[0]
         actualizado = meta(con, "catalogo_actualizado")
         historial_actualizado = meta(con, "historial_externo_actualizado")
-    filas = [completar(f, origen, externo, vistos, reciente, drops) for f in filas]
+    filas = [completar(f, origen, externo, vistos, reciente, drops, fechas) for f in filas]
     if filtro_origen == "desconocido":
         filas = [f for f in filas if not f["origenes"]]
     elif filtro_origen:
