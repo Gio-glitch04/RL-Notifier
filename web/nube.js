@@ -248,6 +248,13 @@ function ordenarCatalogo(filas, orden) {
   const porNombre = (a, b) => (nombre(a) < nombre(b) ? -1 : nombre(a) > nombre(b) ? 1 : 0);
   filas = [...filas].sort(porNombre);
   if (campo === "nombre") return sentido === "desc" ? filas.reverse() : filas;
+  if (campo === "temporada" || campo === "salida") { // sin dato, siempre al final
+    const con = filas.filter((f) => f[campo] != null), sin = filas.filter((f) => f[campo] == null);
+    const clave = (f) => (campo === "temporada" ? [f.temporada, f.salida || ""] : [f.salida, ""]);
+    const comparar = (a, b) => { const x = clave(a), y = clave(b); return x[0] < y[0] ? -1 : x[0] > y[0] ? 1 : x[1] < y[1] ? -1 : x[1] > y[1] ? 1 : 0; };
+    con.sort((a, b) => (sentido === "desc" ? -comparar(a, b) : comparar(a, b)));
+    return con.concat(sin);
+  }
   if (campo === "rareza") {
     const puesto = (f) => {
       const r = f.rareza || "";

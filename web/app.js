@@ -211,16 +211,20 @@ function articuloPack(a) {
 function tarjetaPack(p) {
   const img = urlSegura(p.imagen);
   const contenido = p.contenido.length ? `<ul class="pack-lista">${p.contenido.map(articuloPack).join("")}</ul>`
-    : `<p class="sutil">La wiki todavía no publicó qué trae este pack.</p>`;
+    : `<p class="sutil">Ni la wiki ni las tiendas dicen qué trae este pack.</p>`;
   return `<article class="tarjeta pack">
     <div class="pack-img">${img ? `<img src="${esc(img)}" alt="${esc(p.nombre)}" loading="lazy" referrerpolicy="no-referrer">` : `<span class="sin-imagen">Sin imagen</span>`}
       <div class="etiquetas"><span><span class="etiqueta">Temporada ${esc(p.temporada)}</span></span><span></span></div></div>
     <div class="cuerpo">
       <h3>Pack ${esc(TIPOS_PACK[p.tipo] || p.tipo)}</h3>
       <span class="tipo">${esc(p.nombre)}${p.precio ? ` · ${esc(p.precio)}` : ""}</span>
+      <span class="sutil">${esc([p.lanzado ? "Salió " + fechaDia(p.lanzado) : "", p.creditos ? `+ ${p.creditos.toLocaleString("es")} créditos` : ""].filter(Boolean).join(" · "))}</span>
       ${contenido}
     </div>
-    <div class="botones-tarjeta">${urlSegura(p.url) ? `<a class="btn btn-chico" href="${esc(p.url)}" target="_blank" rel="noopener noreferrer">Ver en la wiki ↗</a>` : ""}</div>
+    <div class="botones-tarjeta">
+      ${(p.tiendas || []).filter((t) => urlSegura(t.url)).map((t) => `<a class="btn btn-chico" href="${esc(t.url)}" target="_blank" rel="noopener noreferrer">${esc(t.tienda)} ↗</a>`).join("")}
+      ${urlSegura(p.url) ? `<a class="btn btn-chico" href="${esc(p.url)}" target="_blank" rel="noopener noreferrer">Wiki ↗</a>` : ""}
+    </div>
   </article>`;
 }
 
@@ -229,7 +233,7 @@ function seccionPacks() {
   if (estado.vista !== "Rocket League" || !packs.length || $("#f-alerta").checked) return "";
   return `<section class="seccion">
     <div class="seccion-cabecera"><h2>Packs de temporada</h2>
-      <span class="sutil">${packs.length} a la venta · con dinero real · datos de la wiki de Rocket League</span></div>
+      <span class="sutil">${packs.length} a la venta · con dinero real · datos de Xbox, Epic y la wiki de Rocket League</span></div>
     <div class="rejilla rejilla-packs">${packs.map(tarjetaPack).join("")}</div>
   </section>`;
 }
@@ -266,23 +270,37 @@ function pintarTienda() {
 }
 
 // ---------- lotes (bundles): cada uno en su propia sub-sección, con lo que trae ----------
-function articuloLote(x) {
+// Artículo de un lote como tarjeta del mismo tamaño que las de la tienda
+function tarjetaContenido(x, lote) {
   const rareza = colorSeguro(x.rareza_color) || "#8a94a8";
   const img = urlSegura(x.imagen);
-  const contenido = `<span class="pack-mini" style="--rareza:${rareza}">${img ? `<img src="${esc(img)}" alt="" loading="lazy" referrerpolicy="no-referrer" class="mezcla-screen">` : ""}</span>
-    <span class="pack-texto"><b>${esc(x.nombre)}${x.color ? ` <span class="pintura"><span class="punto" style="background:${colorSeguro(x.color_hex) || "transparent"}"></span>${esc(x.color)}</span>` : ""}</b>
-      <small>${esc([x.tipo, x.rareza].filter(Boolean).join(" · "))}</small></span>`;
-  return x.catalogo_id ? `<li><a href="#" data-ficha="${esc(x.catalogo_id)}" title="Ver ficha">${contenido}</a></li>` : `<li><span>${contenido}</span></li>`;
+  return `
+  <article class="tarjeta tarjeta-contenido" style="--rareza:${rareza}">
+    <div class="tarjeta-img" ${x.catalogo_id ? `data-ficha="${esc(x.catalogo_id)}" title="Ver ficha"` : ""}>
+      ${img ? `<img src="${esc(img)}" alt="${esc(x.nombre)}" loading="lazy" referrerpolicy="no-referrer" class="mezcla-screen">` : `<span class="sin-imagen">Sin imagen</span>`}
+      <div class="etiquetas">
+        <span>${x.rareza ? `<span class="etiqueta rareza">${esc(x.rareza)}</span>` : ""}</span>
+        <span><span class="etiqueta en-lote">En el lote</span></span>
+      </div>
+    </div>
+    <div class="franja"></div>
+    <div class="cuerpo">
+      <h3 ${x.catalogo_id ? `data-ficha="${esc(x.catalogo_id)}"` : ""}>${esc(x.nombre)}</h3>
+      ${x.color ? `<span class="pintura"><span class="punto" style="background:${colorSeguro(x.color_hex) || "transparent"}"></span>${esc(x.color)}</span>` : ""}
+      <span class="tipo">${esc(x.tipo)}</span>
+      <div class="pie"><span class="sutil">Incluido en ${esc(lote.nombre)}</span></div>
+    </div>
+    <div class="botones-tarjeta">
+      ${x.catalogo_id ? `<button class="btn btn-chico" data-ficha="${esc(x.catalogo_id)}">Ver ficha</button>` : ""}
+    </div>
+  </article>`;
 }
 
 function subseccionLote(a) {
   return `<div class="lote">
     <div class="lote-cabecera"><h3>${esc(a.nombre)}</h3>
       <span class="sutil">${a.contenido.length} artículo${a.contenido.length === 1 ? "" : "s"}${a.precio ? " · " + esc(a.precio) : ""}</span></div>
-    <div class="lote-cuerpo">
-      <div class="lote-tarjeta">${tarjeta(a)}</div>
-      <ul class="pack-lista lote-lista">${a.contenido.map(articuloLote).join("")}</ul>
-    </div>
+    <div class="rejilla">${tarjeta(a)}${a.contenido.map((x) => tarjetaContenido(x, a)).join("")}</div>
   </div>`;
 }
 
@@ -627,6 +645,7 @@ function tarjetaCatalogo(a) {
       <span class="tipo">${esc(a.tipo)}${a.calidad && a.calidad !== a.rareza ? ` · ${esc(a.calidad)}` : ""}</span>
       ${textoOrigen(a)}
       ${textoDrops(a)}
+      ${a.salida || a.temporada_texto ? `<span class="salida">${esc([a.temporada_texto, a.salida ? "salió " + fechaDia(a.salida) : ""].filter(Boolean).join(" · "))}</span>` : ""}
       <span class="visto">${a.ultima_vez
         ? `Última vez en tienda: ${esc(fechaDia(a.ultima_vez))}${a.ultimo_precio != null ? ` · ${esc(a.ultimo_precio.toLocaleString("es"))} créditos` : ""} · ${a.veces} ${a.veces === 1 ? "vez" : "veces"}`
         : "Sin registro en la tienda"}</span>
@@ -744,6 +763,8 @@ async function abrirFicha(id) {
           ${dato("Veces en tienda", a.ultima_vez ? a.veces : "")}
           ${dato("Último precio", a.ultimo_precio != null ? `${a.ultimo_precio.toLocaleString("es")} créditos` : "")}
           ${dato("Colores vistos", a.pinturas.length ? a.pinturas.join(", ") : "")}
+          ${dato("Temporada", a.temporada_texto || "")}
+          ${dato("Fecha de salida", a.salida ? fechaDia(a.salida) : "")}
           <div class="dato"><dt>Drops</dt><dd>${a.drops && a.drops.length ? textoDrops(a, true) : "No sale en drops"}</dd></div>
         </dl>
         <div class="fila-botones izq">
