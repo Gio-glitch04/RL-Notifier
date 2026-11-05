@@ -5,7 +5,8 @@ Revisa cada cierto tiempo:
   - La tienda de Rocket League (destacados, lotes y secciones especiales), leída de
     itemshop.gg, con RL Portal como respaldo automático si itemshop.gg falla.
   - La tienda de Fortnite, solo los artículos de autos: lotes, carrocerías, ruedas,
-    propulsores, rastros y calcomanías (API pública de fortnite-api.com).
+    propulsores, rastros y calcomanías (API pública de fortnite-api.com, más fortnite.gg
+    para los accesorios sueltos que esa API no lista).
 
 Avisa con una notificación de Windows cuando aparece algo nuevo, y con una aparte
 cuando aparece algo de tu lista de deseos (config.json).
@@ -25,7 +26,7 @@ import subprocess
 import sys
 import time
 import urllib.request
-from datetime import datetime
+from datetime import datetime, timezone
 from pathlib import Path
 
 CARPETA = Path(__file__).resolve().parent
@@ -36,6 +37,14 @@ URL_RL = "https://itemshop.gg/rocket-league"
 URL_RL_RESPALDO = "https://www.rl-portal.re/shop"
 URL_FN = "https://fortnite-api.com/v2/shop?language={idioma}"
 URL_FN_WEB = "https://www.fortnite.com/item-shop"
+# fortnite-api.com no lista los accesorios de auto sueltos (turbos, rastros, algunas
+# ruedas): se leen de fortnite.gg y se cruzan con la lista oficial de cosméticos.
+URL_FN_GG = "https://fortnite.gg/shop?filter={filtro}"
+URL_FN_GG_BASE = "https://fortnite.gg"
+URL_FN_COSMETICOS = "https://fortnite-api.com/v2/cosmetics/cars?language={idioma}"
+FILTROS_FN_GG = {"boosts": "booster", "trails": "drifttrail", "wheels": "wheel"}
+UA_NAVEGADOR = ("Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) "
+                "Chrome/130.0.0.0 Safari/537.36")
 
 CONFIG_INICIAL = {
     "minutos_entre_revisiones": 60,
@@ -316,10 +325,12 @@ def tienda_fortnite(config):
     datos = json.loads(descargar(URL_FN.format(idioma=config["idioma_fortnite"])))
     tipos_buscados = set(config["tipos_fortnite"]) | {"otro"}
     articulos = []
+    ids_en_tienda = set()
     for e in datos.get("data", {}).get("entries", []):
         piezas = piezas_fn(e)
         if not piezas:
             continue
+        ids_en_tienda.update(o.get("id") for _, o in piezas)
         piezas.sort(key=lambda p: PRIORIDAD_FN.index(p[0]))
         tipos = [t for t, _ in piezas]
         autos = [o for _, o in piezas]
@@ -364,10 +375,95 @@ def tienda_fortnite(config):
             "precio_num": e.get("finalPrice") if isinstance(e.get("finalPrice"), int) else None,
             "moneda": "V-Bucks",
         })
+    try:
+        articulos += accesorios_fortnite_gg(config, ids_en_tienda, tipos_buscados)
+    except Exception as err:  # si fortnite.gg falla, igual queda lo de fortnite-api.com
+        log(f"Fortnite: no pude leer los accesorios de fortnite.gg ({err})")
     cuenta = {}
     for a in articulos:
         cuenta[a["tipo"]] = cuenta.get(a["tipo"], 0) + 1
     log("Fortnite: " + (", ".join(f"{v} {k}" for k, v in sorted(cuenta.items())) or "sin vehículos"))
+    return articulos
+
+
+def leer_fortnite_gg(filtro):
+    """Ítems de una página filtrada de fortnite.gg: id propio, nombre en inglés, precio, salida."""
+    texto = descargar(URL_FN_GG.format(filtro=filtro), {"User-Agent": UA_NAVEGADOR})
+    items = []
+    for bloque in re.split(r"<div class='fn-item(?: nonbr)?'>", texto)[1:]:
+        nombre = re.search(r"<h3 class='fn-item-name'>(.*?)</h3>", bloque, re.S)
+        if not nombre:
+            continue
+        gg_id = re.search(r"data-id='(\d+)'", bloque)
+        img = re.search(r"<img class='img' src='([^']+)'", bloque)
+        precio = re.search(r"<div class='fn-item-price'>(.*?)</div>", bloque, re.S)
+        salida = re.search(r"data-ts='(\d+)'", bloque)
+        numero = re.sub(r"\D", "", re.sub(r"<[^>]+>", "", precio.group(1))) if precio else ""
+        items.append({
+            "gg_id": gg_id.group(1) if gg_id else "",
+            "nombre": html.unescape(re.sub(r"<[^>]+>", "", nombre.group(1))).strip(),
+            "imagen": URL_FN_GG_BASE + img.group(1) if img and img.group(1).startswith("/") else "",
+            "precio": int(numero) if numero else None,
+            "salida": int(salida.group(1)) if salida else None,
+        })
+    return items
+
+
+def cosmeticos_fn(idioma):
+    datos = json.loads(descargar(URL_FN_COSMETICOS.format(idioma=idioma)))
+    return datos.get("data") or []
+
+
+def accesorios_fortnite_gg(config, ids_en_tienda, tipos_buscados):
+    """Turbos, rastros y ruedas a la venta que fortnite-api.com no lista en su tienda."""
+    vistos = {f: leer_fortnite_gg(f) for f in FILTROS_FN_GG}
+    if not any(vistos.values()):
+        return []
+    # nombre en inglés + tipo -> cosmético oficial (id, imagen, rareza) y su nombre en español
+    por_nombre = {}
+    for c in cosmeticos_fn("en"):
+        clave = ((c.get("type") or {}).get("value", ""), (c.get("name") or "").strip().lower())
+        por_nombre.setdefault(clave, c)
+    idioma = config["idioma_fortnite"]
+    traducidos = {c.get("id"): c for c in cosmeticos_fn(idioma)} if not idioma.startswith("en") else {}
+    articulos = []
+    for filtro, valor in FILTROS_FN_GG.items():
+        tipo = TIPOS_FN[valor]
+        if tipo not in tipos_buscados:
+            continue
+        for it in vistos[filtro]:
+            c = por_nombre.get((valor, it["nombre"].lower())) or {}
+            if c.get("id") in ids_en_tienda:
+                continue  # ya viene de fortnite-api.com (suelto o en un lote)
+            local = traducidos.get(c.get("id")) or c
+            rareza_fn = local.get("rarity") or {}
+            serie = local.get("series") or {}
+            if serie.get("colors"):
+                rareza_color = "#" + serie["colors"][0][:6]
+            else:
+                rareza_color = COLORES_RAREZA_FN.get(rareza_fn.get("value", ""), "#9d9d9d")
+            imagenes = local.get("images") or {}
+            hasta_iso = ""
+            if it["salida"]:
+                hasta_iso = datetime.fromtimestamp(it["salida"], timezone.utc).strftime("%Y-%m-%dT%H:%M:%SZ")
+            articulos.append({
+                "id": "fn:" + (c.get("id") or "gg-" + it["gg_id"]),
+                "tienda": "Fortnite",
+                "seccion": PLURAL_TIPO[tipo].capitalize(),
+                "nombre": local.get("name") or it["nombre"],
+                "tipo": NOMBRE_TIPO[tipo],
+                "color": "",
+                "rareza": rareza_fn.get("displayValue", ""),
+                "precio": f"{it['precio'] if it['precio'] is not None else '?'} V-Bucks",
+                "url": URL_FN_WEB,
+                "hasta": hasta_iso[:10],
+                "hasta_iso": hasta_iso,
+                "imagen": imagenes.get("large") or imagenes.get("small") or imagenes.get("icon") or it["imagen"],
+                "color_hex": "",
+                "rareza_color": rareza_color,
+                "precio_num": it["precio"],
+                "moneda": "V-Bucks",
+            })
     return articulos
 
 
