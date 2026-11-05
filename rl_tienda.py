@@ -313,6 +313,13 @@ def tienda_fortnite(config):
     tipos_buscados = set(config["tipos_fortnite"]) | {"otro"}
     articulos = []
     for e in datos.get("data", {}).get("entries", []):
+        if e.get("cars") or "vehic" in json.dumps(e).lower():
+            partes = []
+            for k, v in e.items():
+                if isinstance(v, list) and v and isinstance(v[0], dict) and "type" in v[0]:
+                    for o in v:
+                        partes.append(f"{k}:{o.get('name')}|{json.dumps(o.get('type'), ensure_ascii=False)}|id={o.get('id')}")
+            log("DIAG " + str((e.get("bundle") or {}).get("name")) + " ## " + str((e.get("layout") or {}).get("name")) + " ## " + " ; ".join(partes))
         piezas = piezas_fn(e)
         if not piezas:
             continue
