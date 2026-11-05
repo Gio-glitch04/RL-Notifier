@@ -82,6 +82,10 @@ CLAVES_FN = (
 # Si una oferta trae varias piezas sin ser lote (p.ej. carrocería + calcomanía de
 # fábrica), manda la pieza principal.
 PRIORIDAD_FN = ["carroceria", "rueda", "propulsor", "rastro", "calcomania", "otro"]
+PLURAL_TIPO = {
+    "carroceria": "carrocerías", "rueda": "ruedas", "propulsor": "propulsores",
+    "rastro": "rastros", "calcomania": "calcomanías", "otro": "artículos",
+}
 COLORES_RAREZA_FN = {
     "common": "#9d9d9d", "uncommon": "#69bb1e", "rare": "#2cc3fc", "epic": "#c359ff",
     "legendary": "#ea8d23", "mythic": "#ffd84b", "exotic": "#76d6e3",
@@ -324,7 +328,10 @@ def tienda_fortnite(config):
         if tipo not in tipos_buscados:
             continue
         nombre = (e.get("bundle") or {}).get("name") or autos[0].get("name", "?")
-        if es_lote:
+        if es_lote and len(set(tipos)) == 1:
+            # p.ej. el lote "Komodo": solo trae calcomanías para esa carrocería
+            detalle = f"Lote de {len(tipos)} {PLURAL_TIPO.get(tipos[0], 'artículos')}"
+        elif es_lote:
             detalle = ", ".join(sorted({NOMBRE_TIPO.get(t, "Otro") for t in tipos}))
         else:
             detalle = NOMBRE_TIPO.get(tipo) or (autos[0].get("type") or {}).get("displayValue") or "Vehículo"
@@ -341,7 +348,8 @@ def tienda_fortnite(config):
         articulos.append({
             "id": "fn:" + e.get("offerId", nombre),
             "tienda": "Fortnite",
-            "seccion": (e.get("layout") or {}).get("name") or "Vehículos",
+            # Las ofertas sueltas (p.ej. ruedas) no traen sección: se agrupan por tipo
+            "seccion": (e.get("layout") or {}).get("name") or (PLURAL_TIPO.get(tipo) or "vehículos").capitalize(),
             "nombre": nombre,
             "tipo": detalle,
             "color": "",
