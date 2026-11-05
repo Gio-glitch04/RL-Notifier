@@ -73,6 +73,15 @@ TIPOS_FN = {
     "drifttrail": "rastro",
     "skin": "calcomania",
 }
+# fortnite-api.com no siempre usa el mismo nombre (p.ej. "VehicleCosmetics_Wheel",
+# "boost", "Drift Trail"), así que también se busca por palabra clave.
+CLAVES_FN = (
+    ("wheel", "rueda"), ("boost", "propulsor"), ("trail", "rastro"), ("drift", "rastro"),
+    ("body", "carroceria"), ("skin", "calcomania"), ("decal", "calcomania"),
+)
+# Si una oferta trae varias piezas sin ser lote (p.ej. carrocería + calcomanía de
+# fábrica), manda la pieza principal.
+PRIORIDAD_FN = ["carroceria", "rueda", "propulsor", "rastro", "calcomania", "otro"]
 COLORES_RAREZA_FN = {
     "common": "#9d9d9d", "uncommon": "#69bb1e", "rare": "#2cc3fc", "epic": "#c359ff",
     "legendary": "#ea8d23", "mythic": "#ffd84b", "exotic": "#76d6e3",
@@ -270,24 +279,55 @@ def tienda_rocket_league(config):
 
 # ---------- Fortnite (vehículos) ----------
 
+def tipo_fn(objeto):
+    """Tipo interno (rueda, propulsor...) de un cosmético de vehículo de Fortnite."""
+    t = objeto.get("type") or {}
+    valor = str(t.get("value", "")).lower()
+    if valor in TIPOS_FN:
+        return TIPOS_FN[valor]
+    texto = " ".join(str(t.get(k, "")) for k in ("value", "displayValue", "backendValue")).lower()
+    texto = texto.replace(" ", "").replace("_", "")
+    for clave, tipo in CLAVES_FN:
+        if clave in texto:
+            return tipo
+    return "otro"
+
+
+def piezas_fn(entrada):
+    """Cosméticos de vehículo de una oferta, estén en "cars" o en otra lista."""
+    piezas = []
+    for clave, valor in entrada.items():
+        if not isinstance(valor, list):
+            continue
+        for obj in valor:
+            if not isinstance(obj, dict):
+                continue
+            fondo = str((obj.get("type") or {}).get("backendValue", "")).lower()
+            if clave == "cars" or "vehicle" in fondo:
+                piezas.append((tipo_fn(obj), obj))
+    return piezas
+
+
 def tienda_fortnite(config):
     datos = json.loads(descargar(URL_FN.format(idioma=config["idioma_fortnite"])))
-    tipos_buscados = set(config["tipos_fortnite"])
+    tipos_buscados = set(config["tipos_fortnite"]) | {"otro"}
     articulos = []
     for e in datos.get("data", {}).get("entries", []):
-        autos = e.get("cars") or []
-        if not autos:
+        piezas = piezas_fn(e)
+        if not piezas:
             continue
-        tipos = [TIPOS_FN.get(a.get("type", {}).get("value", ""), "otro") for a in autos]
+        piezas.sort(key=lambda p: PRIORIDAD_FN.index(p[0]))
+        tipos = [t for t, _ in piezas]
+        autos = [o for _, o in piezas]
         es_lote = bool(e.get("bundle")) and len(autos) > 1
         tipo = "lote" if es_lote else tipos[0]
         if tipo not in tipos_buscados:
             continue
         nombre = (e.get("bundle") or {}).get("name") or autos[0].get("name", "?")
         if es_lote:
-            detalle = ", ".join(sorted({NOMBRE_TIPO.get(t, t) for t in tipos}))
+            detalle = ", ".join(sorted({NOMBRE_TIPO.get(t, "Otro") for t in tipos}))
         else:
-            detalle = NOMBRE_TIPO.get(tipo, tipo)
+            detalle = NOMBRE_TIPO.get(tipo) or (autos[0].get("type") or {}).get("displayValue") or "Vehículo"
         rareza_fn = autos[0].get("rarity") or {}
         rareza = rareza_fn.get("displayValue", "")
         serie = autos[0].get("series") or {}
@@ -316,6 +356,10 @@ def tienda_fortnite(config):
             "precio_num": e.get("finalPrice") if isinstance(e.get("finalPrice"), int) else None,
             "moneda": "V-Bucks",
         })
+    cuenta = {}
+    for a in articulos:
+        cuenta[a["tipo"]] = cuenta.get(a["tipo"], 0) + 1
+    log("Fortnite: " + (", ".join(f"{v} {k}" for k, v in sorted(cuenta.items())) or "sin vehículos"))
     return articulos
 
 
